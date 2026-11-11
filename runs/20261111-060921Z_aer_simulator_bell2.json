@@ -1,0 +1,32 @@
+{
+ "when_utc": "2026-11-11T06:09:21+00:00",
+ "backend": "aer_simulator",
+ "local": true,
+ "job_id": "local",
+ "circuit": "bell2",
+ "shots": 1024,
+ "two_qubit_gates": 1,
+ "depth": 2,
+ "ops": {
+  "measure": 2,
+  "h": 1,
+  "cx": 1,
+  "barrier": 1
+ },
+ "transpile_note": null,
+ "counts_qiskit_order": {
+  "00": 479,
+  "11": 545
+ },
+ "counts_book_order": {
+  "00": 479,
+  "11": 545
+ },
+ "tvd_vs_ideal": 0.0322265625,
+ "usage_seconds": null,
+ "versions": {
+  "python": "3.12.3",
+  "qiskit": "2.6.2",
+  "qiskit_ibm_runtime": "0.52.0"
+ }
+}
