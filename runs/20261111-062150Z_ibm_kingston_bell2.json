@@ -1,0 +1,37 @@
+{
+ "when_utc": "2026-11-11T06:21:50+00:00",
+ "backend": "ibm_kingston",
+ "local": false,
+ "job_id": "dbq0it0ou4as73cucgf0",
+ "circuit": "bell2",
+ "shots": 1024,
+ "two_qubit_gates": 1,
+ "depth": 7,
+ "ops": {
+  "rz": 6,
+  "sx": 3,
+  "measure": 2,
+  "cz": 1,
+  "barrier": 1
+ },
+ "transpile_note": null,
+ "counts_qiskit_order": {
+  "00": 483,
+  "11": 514,
+  "01": 11,
+  "10": 16
+ },
+ "counts_book_order": {
+  "00": 483,
+  "11": 514,
+  "10": 11,
+  "01": 16
+ },
+ "tvd_vs_ideal": 0.0283203125,
+ "usage_seconds": 2,
+ "versions": {
+  "python": "3.12.3",
+  "qiskit": "2.6.2",
+  "qiskit_ibm_runtime": "0.52.0"
+ }
+}
