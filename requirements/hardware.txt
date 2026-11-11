@@ -1,0 +1,7 @@
+# 다른 장치 경로(선택). IBM 은 sdk.txt 의 qiskit-ibm-runtime 으로 충분하다. 2026-11-10 PyPI 확인: amazon-braket-sdk 1.126.0 (Python >= 3.11).
+-r sdk.txt
+amazon-braket-sdk>=1.126,<2
+# 아래는 키트의 스크립트가 쓰지 않는다. 필요할 때 하나씩 설치해 충돌을 따로 본다(pennylane-qiskit 의 Qiskit 2.x 지원은 확인하지 못했다).
+#   pip install "qiskit-braket-provider>=0.27,<0.28"     # Qiskit 회로를 Braket 장치로
+#   pip install "qiskit-ionq>=1.1,<2"                    # IonQ Quantum Cloud (IONQ_API_KEY)
+#   pip install "pennylane-qiskit>=0.45,<0.47"           # PennyLane 에서 IBM 장치로

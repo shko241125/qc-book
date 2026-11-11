@@ -1,0 +1,19 @@
+# 책이 병기하는 SDK (시뮬레이터까지). 2026-11-10~11 에 PyPI 에서 확인한 최신 배포:
+#   qiskit 2.6.2 · qiskit-aer 0.18.2 (Python >= 3.11) · qiskit-ibm-runtime 0.52.0 · pennylane 0.45.1 · cirq-core 1.7.0 (>= 3.11)
+#   qutip 5.3.1 · qutip-qip 0.4.2 · qualtran 0.7.0
+# 책의 스니펫은 qiskit 2.5.x · qiskit-aer 0.17.x · qutip 5.2.x · qutip-qip 0.4.x 기준으로 썼다. 빨리 바뀌는 패키지는 상한을 둔다:
+#   - qiskit-ibm-runtime: 0.50 부터 SamplerV2·EstimatorV2 가 폐기 예정(deprecated)이다. 상한을 올리기 전에 env/run_ibm.py --local 로 다시 확인한다.
+#   - qutip-qip: 0.5 개발판이 게이트를 문자열 이름으로 넘기는 방식을 폐기 예정으로 돌렸다.
+#   - qualtran: 미리보기 단계라 하위 호환을 보장하지 않는다.
+# 설치 뒤 env/setup.sh 가 실제 설치된 버전을 requirements/lock-YYYYMMDD.txt 로 남긴다 — 책의 "출처와 환경"에는 그 값을 적는다.
+# 이 범위를 바꾸면 env/claude_cloud_setup.sh 의 목록도 같이 바꾼다.
+-r base.txt
+qiskit>=2.5,<3
+qiskit-aer>=0.17,<0.19
+qiskit-ibm-runtime>=0.42,<0.53
+pennylane>=0.45,<0.47
+cirq-core>=1.7,<2
+qutip>=5.2,<6
+qutip-qip>=0.4,<0.5
+qualtran>=0.7,<0.8
+pylatexenc

@@ -1,0 +1,7 @@
+{
+  "name": "qc-book",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+  "postCreateCommand": "bash env/setup.sh --no-venv",
+  "containerEnv": { "MPLBACKEND": "Agg" },
+  "customizations": { "vscode": { "extensions": ["ms-python.python", "ms-toolsai.jupyter"] } }
+}

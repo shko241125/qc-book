@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+snippets/
+runs/regress/
+runs/pending_*.json
+ch14/ch14_record_fake.json
+*.tar.gz
+*.b64

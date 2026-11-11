@@ -1,0 +1,6 @@
+# 책의 numpy 검증 스크립트(chNN/chNN_*.py)와 md → html 변환에 필요한 것.
+# 하한은 넉넉히 잡았다. 책을 쓴 환경은 Python 3.13.17 · numpy 2.5.3 · scipy 1.18.1 · matplotlib 3.11.2 다.
+numpy>=2.0
+scipy>=1.14
+matplotlib>=3.9
+markdown>=3.6

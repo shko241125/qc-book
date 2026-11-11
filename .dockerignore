@@ -1,0 +1,7 @@
+.venv
+.env*
+snippets
+runs
+**/__pycache__
+*.tar.gz
+.git
