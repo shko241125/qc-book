@@ -1,13 +1,16 @@
-"""14장 — IBM Open Plan 제출 스크립트. qiskit==2.6.2, qiskit-ibm-runtime==0.52.0, qiskit-aer==0.18.2 — 실행 완료(2026-11-11, fake·real)
+"""14장 — IBM Open Plan 제출 스크립트. qiskit==2.6.2, qiskit-ibm-runtime==0.52.0, qiskit-aer==0.18.2 — 작성됨, 이 판은 미실행
+실기 제출은 이전 판(SamplerV2·EstimatorV2 이름, GHZ measure_all)으로 2026-11-11 에 했다(fake·real). 그 뒤 고친 것 — GHZ 의 책 순서 매핑, 트랜스파일 지표,
+제출 직후부터 runs/ 고정 사본에 쓰는 기록 순서(2026-11-11 검토 R11) — 은 아직 돌리지 않았다. 먼저 `python ch14_submit.py fake` 로 확인한다.
   python ch14_submit.py fake           가짜 Heron(FakeMarrakesh) 보정값으로 로컬 실행 — QPU 를 쓰지 않는다
   python ch14_submit.py real           실제 장치를 고르고 트랜스파일해 제출 계획만 찍는다(제출하지 않는다)
   python ch14_submit.py real --yes     실제로 제출한다(Open 플랜 분량 약 10초)
-Runtime 인터페이스: qiskit-ibm-runtime 0.52 의 최상위 Sampler·Estimator 는 클라이언트 쪽 프리미티브(executor_sampler·
-executor_estimator)다. 0.50 부터 폐기 예정인 것은 서버 쪽 SamplerV2·EstimatorV2(qiskit_ibm_runtime.server_side)다.
+Runtime 인터페이스: 설치된 qiskit-ibm-runtime 0.52.0 에서 최상위 Sampler·Estimator 는 클라이언트 쪽 프리미티브(executor_sampler·
+executor_estimator)였다(패키지의 __init__.py 로 확인). 0.50 릴리스 노트가 폐기 예정이라고 한 것은 서버 쪽 구현이다.
+어느 구현으로 돌았는지는 기록의 "primitives" 항목에 남는다.
 
 순서: (0) 가짜 백엔드로 로컬 노이즈 에뮬레이션 → (1) 실제 백엔드 선택·트랜스파일 → (2) 제출 → (3) 결과·사용 시간 기록.
 Open Plan 한도: 28일 롤링 윈도우 10분 QPU 시간. 사용량은 job.usage() (초)로 확인한다
-(metrics()['usage'] 의 키는 runtime 0.51 에서 quantum_seconds → qpu_charge_time_seconds 로 바뀌었다).
+(metrics()['usage'] 의 키는 플랫폼 작업에서 qpu_charge_time_seconds 다. 로컬 시험 모드는 0.51 부터 같은 꼴을 낸다).
 """
 import json, pathlib, sys, time
 import numpy as np
@@ -105,27 +108,40 @@ def run(mode="fake", shots=4000, yes=False):
               "2026-11-11 같은 구성의 실행은 QPU 6+3초를 썼다. 제출하려면 --yes 를 붙인다.")
         return None
 
-    record = {"backend": backend.name, "shots": shots, "t": time.strftime("%Y-%m-%d %H:%M"), "bit_order": "book", "jobs": {}}
+    here = pathlib.Path(__file__).resolve().parent
+    stamp = time.strftime("%Y%m%d-%H%M%SZ", time.gmtime())           # 제출 시각(UTC) — runs/ 고정 사본의 이름
+    record = {"backend": backend.name, "shots": shots, "t": time.strftime("%Y-%m-%d %H:%M"),
+              "t_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "bit_order": "book", "bit_order_note": "qpe_t 는 읽은 정수 x 의 이진 표기(c2c1c0 = q2q1q0)",
+              "primitives": [f"{type(sampler).__module__}.{type(sampler).__name__}", f"{type(estimator).__module__}.{type(estimator).__name__}"],
+              "jobs": {}}
+    keep = here.parent / "runs" / f"{stamp}_{backend.name}_ch14_record.json"
 
-    def dump():
-        with open(f"ch14_record_{mode}.json", "w") as fh:
-            json.dump(record, fh, indent=1, ensure_ascii=False)
+    def dump(final=False):
+        text = json.dumps(record, indent=1, ensure_ascii=False)
+        if mode == "fake":
+            (here / "ch14_record_fake.json").write_text(text, encoding="utf-8")
+            return
+        keep.write_text(text, encoding="utf-8")          # 실기 기록은 처음부터 runs/ 의 고정 사본에 쓴다
+        if final:                                        # ch14/ 의 기록은 결과가 다 온 뒤에만 바꾼다(앞선 기록을 빈 것으로 덮지 않는다)
+            (here / "ch14_record_real.json").write_text(text, encoding="utf-8")
 
     job = sampler.run(list(isa.values()), shots=shots)   # 회로 4개를 한 작업(PUB 4개)으로 → 오버헤드 1회
     jid = job.job_id() if hasattr(job, "job_id") else "fake"
     print("sampler job id:", jid, flush=True)            # 끊겨도 service.job(id) 로 되찾는다
+    record["job_ids"] = {"sampler": jid}; dump()         # Estimator 제출이 실패해도 이 id 는 파일에 있다
     # HVA 에너지: Estimator 가 Z·X 기저를 나눠 잰다 (관측량 그룹 2개). 두 작업을 먼저 다 제출하고 id 를 남긴 뒤 결과를 기다린다
-    ejob = estimator.run([(hva_isa, H_isa)], precision=0.02)   # 목표 표준오차. 실제 표준오차는 결과의 stds(2026-11-11: 0.039)
+    ejob = estimator.run([(hva_isa, H_isa)], precision=0.02)   # 샷 수를 정하는 목표값. 표준오차는 결과의 stds(2026-11-11: 0.039)
     ejid = ejob.job_id() if hasattr(ejob, "job_id") else "fake"
     print("estimator job id:", ejid, flush=True)
-    record["job_ids"] = {"sampler": jid, "estimator": ejid}
-    dump()                                               # 결과를 받기 전에 끊겨도 두 id 가 파일에 남는다
+    record["job_ids"]["estimator"] = ejid; dump()        # 결과를 받기 전에 끊겨도 두 id 가 파일에 남는다
 
     res = job.result()
     for k, pub in zip(isa.keys(), res):
         counts = pub.data.c.get_counts()
         record["jobs"][k] = {"job_id": jid, "counts": counts, **st[k]}
         print(k, sorted(counts.items(), key=lambda kv: -kv[1])[:3])
+    dump()                                               # Estimator 결과를 기다리다 끊겨도 counts 는 남는다
     d = ejob.result()[0].data
     ev, sd = float(d.evs), float(np.asarray(getattr(d, "stds", np.nan)))
     # fake 모드의 Aer Estimator 는 판독 오류 없이 기댓값을 계산한다 → 비교값은 −4.555, real(resilience 0) 은 −4.433
@@ -136,17 +152,15 @@ def run(mode="fake", shots=4000, yes=False):
         for j in (job, ejob):
             try:
                 u = j.metrics().get("usage", {})
-                secs = u.get("qpu_charge_time_seconds", u.get("quantum_seconds"))   # runtime 0.51 에서 키 이름이 바뀌었다
+                secs = u.get("qpu_charge_time_seconds", u.get("quantum_seconds"))   # 플랫폼 작업의 키는 qpu_charge_time_seconds
                 if secs is None:
                     secs = j.usage()                     # RuntimeJobV2.usage() → 초(float). 집계 전에는 0 일 수 있다
             except Exception as e:                       # 사용량 때문에 기록을 잃지 않는다
                 secs = f"조회 실패: {type(e).__name__}: {e}"
             record.setdefault("qpu_seconds", []).append(secs)
         print("qpu_seconds:", record["qpu_seconds"])
-        dump()
-        keep = pathlib.Path(__file__).resolve().parent.parent / "runs" / f"{time.strftime('%Y%m%d-%H%M%SZ', time.gmtime())}_{backend.name}_ch14_record.json"
-        keep.write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding="utf-8")   # 다음 실행이 덮어쓰지 않는 고정 사본
         print("고정 사본:", keep.name)
+    dump(final=True)
     return record
 
 

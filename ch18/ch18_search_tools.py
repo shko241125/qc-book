@@ -23,6 +23,15 @@ matplotlib.rcParams["font.family"] = ["Noto Sans CJK JP", "DejaVu Sans"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 T0 = time.time()
+
+
+def _sig(x, v, digits=2):
+    """회귀 검사용: 유효숫자 digits 자리로 적은 값 v 와 x 가 반올림 범위(마지막 자리 ±0.5) 안에서 같은가."""
+    return abs(x - v) <= 0.5 * 10.0 ** (np.floor(np.log10(abs(v))) - digits + 1)
+
+
+# 회귀 검사(assert)는 본문(ch18_search_tools.md)이 인용하는 값을 값이 계산된 자리 바로 뒤에서 확인한다.
+# 실행 시간은 검사하지 않는다. 10⁻¹³~10⁻¹⁶ 수준의 반올림 잔차는 값이 아니라 상한(10⁻¹⁰)으로 검사한다.
 I2 = np.eye(2, dtype=complex)
 X = np.array([[0, 1], [1, 0]], dtype=complex)
 Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -126,6 +135,7 @@ f_, g_ = T_.cost_grad(th_, U_.conj().T); e_ = 1e-6
 gn_ = np.array([(T_.cost_grad(th_ + e_ * np.eye(T_.npar)[i], U_.conj().T)[0]
                  - T_.cost_grad(th_ - e_ * np.eye(T_.npar)[i], U_.conj().T)[0]) / (2 * e_) for i in range(T_.npar)])
 print(f"A0) 해석적 기울기 vs 중심차분 (3큐비트, 파라미터 {T_.npar}개): 최대 차 {np.abs(g_-gn_).max():.1e}")
+assert T_.npar == 27 and np.abs(g_ - gn_).max() < 1e-8, "4절: 해석적 기울기 = 중심차분 (파라미터 27개, 최대 차 4.8×10⁻¹¹ 수준)"
 
 # A1. 2큐비트 표적: CNOT k개로 닿는 최소 비충실도
 SWAP = np.eye(4)[[0, 2, 1, 3]].astype(complex)
@@ -143,6 +153,10 @@ for name, U in targets2:
     kmin = next(k for k, f in enumerate(row) if f < 1e-10)
     sbm, _ = sbm_cnot_count(U); tab2[name] = row
     print(f"    {name:8s} " + " ".join(f"{f:8.4f}" for f in row) + f"      {kmin}            {sbm}" + ("" if kmin == sbm else "   ← 불일치"))
+    k_md, row_md = {"CZ": (1, (0.5, 0, 0, 0)), "CP(π/2)": (2, (0.1464, 0.1464, 0, 0)), "iSWAP": (2, (0.75, 0.5, 0, 0)),
+                    "√SWAP": (3, (0.375, 0.375, 0.1464, 0)), "SWAP": (3, (0.75, 0.75, 0.5, 0)), "QFT₂": (3, (0.75, 0.5732, 0.1464, 0))}[name]
+    assert np.allclose(row, row_md, atol=5e-5), "5절 (A) 2큐비트 표: CNOT k개 틀의 최소 비충실도"
+    assert kmin == k_md and sbm == k_md, "5절 (A) 2큐비트 표·1절: 수치로 찾은 최소 k = γ 판정식 (CZ 1, CP·iSWAP 2, √SWAP·SWAP·QFT₂ 3)"
 
 # A2. Haar 무작위 SU(4) 20개
 print("\nA2) Haar 무작위 2큐비트 유니터리 20개")
@@ -159,6 +173,10 @@ print(f"    k=2 바닥과 |Im tr γ(U)| 의 순위 상관(Spearman): {np.corrcoe
       f"   (최소 바닥 표적의 |Im tr γ| = {imtr[np.argmin(fl2)]:.1e})")
 print("    파라미터 세기: SU(4) 15차원, 틀의 유효 자유도 6 + 4k → k ≥ ⌈9/4⌉ = 3;  일반 n: ⌈(4ⁿ−3n−1)/4⌉ = "
       + ", ".join(f"n={n}: {int(np.ceil((4**n-3*n-1)/4))}" for n in (2, 3, 4, 5)))
+assert int((fl2 < 1e-10).sum()) == 0 and int((fl3 < 1e-10).sum()) == 20 and fl3.max() < 1e-10, "5절 (A): Haar 20개는 CNOT 2개로 0개, 3개로 20개 모두 닿는다"
+assert _sig(fl2.min(), 8.4e-5) and _sig(np.median(fl2), 6.4e-3) and _sig(fl2.max(), 6.4e-2), "5절 (A)·1절: k = 2 비충실도 최소 8.4×10⁻⁵, 중앙값 6.4×10⁻³, 최대 6.4×10⁻²"
+assert abs(np.corrcoef(np.argsort(np.argsort(fl2)), np.argsort(np.argsort(imtr)))[0, 1] - 0.934) < 5e-4, "5절 (A): k = 2 바닥값과 |Im tr γ| 의 순위 상관 0.93 (스크립트 0.934)"
+assert [int(np.ceil((4**n_ - 3*n_ - 1) / 4)) for n_ in (2, 3, 4, 5)] == [3, 14, 61, 252], "3절·8절 문제 1: 파라미터 하한 ⌈(4ⁿ−3n−1)/4⌉ = 3, 14, 61, 252"
 
 # A3. 3큐비트 CCZ(= H 켤레로 Toffoli): 구조 전수 탐색
 CCZ = np.diag([1] * 7 + [-1]).astype(complex)
@@ -195,6 +213,14 @@ print("    선형 연결 0–1–2(쌍 2종):")
 res_line = exhaustive(CCZ, [(0, 1), (1, 2)], [(0, 1, 2), (2, 1, 0)], 8, 4, rng)
 for s in res_line[-1][3]: print("      닿은 구조:", " ".join(f"{a}{b}" for a, b in s))
 print(f"    바닥값 검산: 1 − (6/8)² = {1-(6/8)**2:.4f} (항등), 3/8 = {3/8:.4f}, (2−√2)/4 = {(2-np.sqrt(2))/4:.4f}")
+assert [(r[0], r[1]) for r in res_all] == [(0, 1), (1, 1), (2, 2), (3, 4), (4, 10), (5, 25), (6, 70)], "5절 (A) CCZ 표: 전결합 구조 묶음 수"
+assert np.allclose([r[2] for r in res_all], [0.4375, 0.4375, 0.375, 0.375, 0.1464, 0.1464, 0], atol=5e-5), "5절 (A) CCZ 표: 전결합 최소 비충실도"
+assert all(not r[3] for r in res_all[:-1]) and sum(r[1] for r in res_all[:-1]) == 43 and len(res_all[-1][3]) == 4, "1절·5절 (A): 전결합 5개 이하 43묶음 모두 실패, 6개에서 4묶음이 닿음"
+assert ((0, 1), (0, 1), (0, 2), (1, 2), (0, 2), (1, 2)) in res_all[-1][3], "5절 (A): 닿은 구조 중 하나는 01·01·02·12·02·12"
+assert [(r[0], r[1]) for r in res_line] == [(0, 1), (1, 1), (2, 2), (3, 3), (4, 6), (5, 10), (6, 20), (7, 36), (8, 72)], "5절 (A) CCZ 표: 선형 연결 구조 묶음 수"
+assert np.allclose([r[2] for r in res_line], [0.4375, 0.4375, 0.375, 0.375, 0.1464, 0.1464, 0.1464, 0.1464, 0], atol=5e-5), "5절 (A) CCZ 표: 선형 연결 최소 비충실도"
+assert all(not r[3] for r in res_line[:-1]) and len(res_line[-1][3]) == 4, "1절·5절 (A): 선형 연결은 7개 이하 모두 실패, 8개에서 4묶음이 닿음"
+assert abs(1 - (6/8)**2 - 0.4375) < 1e-12 and abs((2 - np.sqrt(2)) / 4 - 0.1464) < 5e-5, "5절 (A): 바닥값 0.4375, 0.375, 0.1464 = (2 − √2)/4"
 tA = time.time() - T0
 
 # =====================================================================
@@ -319,6 +345,13 @@ for n in (4, 6, 8):
     print(f"    {n}   {n*(n-1):4d}    {E0:.6f}   {str(first_below(hist,1e-3)):22s}  {str(first_below(hist,1e-6)):17s}  {str(first_below(hist,1e-8)):17s}"
           f"  ({hist[-1][0]}, {abs(hist[-1][1]):.1e})   풀 기울기 측정 {ngrad}회, 에너지·기울기 평가 {nfev}회")
     if n == 4: print("        n = 4에서 고른 순서:", " ".join(names))
+    if n == 4: assert names == "Y0Z1 Y2Z1 Y3Z2 Y3Z1 Y0Z2 Y0Z3 Y1Z3".split(), "5절 (B): n = 4 에서 고른 순서"
+    e0_md, b3_md, b6_md, b8_md, last_md, ng_md, nf_md = {4: (-4.758770, (6, 12), (7, 14), (7, 14), 7, 96, 83), 6: (-7.296230, (15, 30), (30, 60), (31, 62), 31, 960, 2091),
+                                                         8: (-9.837951, (40, 80), None, None, 60, 3416, 4980)}[n]
+    assert abs(E0 - e0_md) < 5e-7 and len(make_pool(n, "YZ")) == n * (n - 1) == {4: 12, 6: 30, 8: 56}[n], "5절 (B) ADAPT 표: E0, 풀 크기"
+    assert (first_below(hist, 1e-3), first_below(hist, 1e-6), first_below(hist, 1e-8), hist[-1][0]) == (b3_md, b6_md, b8_md, last_md), "5절 (B) ADAPT 표: 오차 10⁻³·10⁻⁶·10⁻⁸ 까지 게이트(CNOT)"
+    assert (ngrad, nfev) == (ng_md, nf_md), "5절 (B) ADAPT 표: 풀 기울기 측정 횟수, 에너지·기울기 평가 횟수"
+    assert _sig(abs(hist[-1][1]), 4.8e-5) if n == 8 else abs(hist[-1][1]) < 1e-10, "5절 (B)·1절: n = 8 은 게이트 60개에서 4.8×10⁻⁵, n = 4·6 은 바닥상태 도달"
 
 print("\nB2) 풀과 시작 상태에 따른 함정 (n = 4, 6): 멈춘 뒤의 오차와 최대 기울기")
 print("    n  시작      풀                    풀 크기  붙인 게이트  멈춘 오차 E−E0   최대 기울기   설명되는 값")
@@ -340,6 +373,14 @@ for n in (4, 6):
         label = {"Y": "{Y_i}", "YZ": "{Y_iZ_j}", "full": "{Y_i, Y_iZ_j, Y_iX_j}"}[kind]
         print(f"    {n}  {iname}   {label:22s} {len(pool):3d}      {hist[-1][0]:3d}        {abs(hist[-1][1]):9.2e}      {hist[-1][2]:.1e}     {refs.get((iname, kind), '바닥상태 도달')}")
     print(f"       (n = {n}: 패리티 ΠX 홀 구역의 최저 에너지 E₁ = {e_odd:.6f}, 간극 E₁−E₀ = {e_odd-E0:.4f} = 4·sin(π/(4n+2)) = {4*np.sin(np.pi/(4*n+2)):.4f})")
+    assert abs(e_plus - {4: 0.759, 6: 1.296}[n]) < 5e-4 and abs(e_mf - {4: 0.355, 6: 0.394}[n]) < 5e-4 and abs(e_sym - {4: 0.347, 6: 0.241}[n]) < 5e-4, \
+        "5절 (B) 함정 표의 정체: |+…+⟩ 의 에너지 오차, 평균장 최적, (E₁ − E₀)/2"
+    assert abs((e_odd - E0) - 4 * np.sin(np.pi / (4 * n + 2))) < 1e-9 and abs((e_odd - E0) - {4: 0.6946, 6: 0.4821}[n]) < 5e-5, "5절 (B): 간극 E₁ − E₀ = 4·sin(π/(4n+2)) (n = 4: 0.6946)"
+trap_md = [0.759, None, 0.355, 0.347, None, 1.296, None, 0.394, 0.241, None]            # 5절 (B) 함정 표, trap_rows 순서(n = 4 다섯 줄, n = 6 다섯 줄); None = 바닥상태 도달
+for row_, e_md in zip(trap_rows, trap_md):
+    assert row_[6] <= 2e-8, "5절 (B): 멈춘 곳의 기울기는 모두 2×10⁻⁸ 이하"
+    assert abs(row_[5]) < 1e-10 if e_md is None else abs(row_[5] - e_md) < 5e-4, "5절 (B) 함정 표·1절: 멈춘 오차 (0.759, 0.355, 0.347; 1.296, 0.394, 0.241)"
+assert trap_rows[0][4] == 0 and trap_rows[5][4] == 0, "5절 (B) 함정 표: |+…+⟩·{Y_i} 는 게이트 0개에서 멈춘다"
 
 print("\nB3) 비교 기준 — 구조를 아는 틀 HVA(13장): 층 p, 파라미터 2p, CNOT 2p(n−1). 시작점 = 이전 최적 + 무작위 20개")
 print("    n    p   파라미터   CNOT    최선 오차 E−E0   최선의 2배 이내로 간 시작점 비율   에너지·기울기 평가(누적)")
@@ -351,7 +392,15 @@ for n in (4, 6):
         frac = np.mean(finals - E0 < 2 * err + 1e-9)
         hva_pts[n].append((2 * p, max(err, 1e-16), 2 * p * (n - 1)))
         print(f"    {n}   {p:2d}     {2*p:3d}     {2*p*(n-1):3d}      {err:9.2e}            {frac:4.2f}                         {tot}")
+        if (n, p) in ((4, 3), (4, 4), (6, 6), (6, 8), (6, 9)):                       # 5절 (B) HVA 표의 다섯 줄: (파라미터, CNOT, 최선 오차, 2배 이내 비율)
+            par_md, cx_md, err_md, frac_md = {(4, 3): (6, 18, 1.56e-4, 0.24), (4, 4): (8, 24, None, 0.71), (6, 6): (12, 60, 2.26e-3, 0.19),
+                                              (6, 8): (16, 80, 5.90e-5, 0.05), (6, 9): (18, 90, None, 0.38)}[(n, p)]
+            assert (2 * p, 2 * p * (n - 1)) == (par_md, cx_md) and abs(frac - frac_md) < 5e-3, "5절 (B) HVA 표: 파라미터, CNOT, 최선의 2배 이내로 간 시작점 비율"
+            assert err < 1e-9 if err_md is None else _sig(err, err_md, 3), "5절 (B) HVA 표: 최선 오차 (1.6×10⁻⁴, 2.3×10⁻³, 5.9×10⁻⁵; p = 4·9 는 10⁻¹³ 수준)"
         if err < 1e-9: break
+assert [hva_pts[4][-1][0] // 2, hva_pts[6][-1][0] // 2] == [4, 9], "5절 (B): 오차가 10⁻⁸ 아래로 가는 것은 n = 4 에서 p = 4, n = 6 에서 p = 9 부터"
+assert tot == 60622, "5절 (B): HVA n = 6 의 p = 1~9 에 에너지·기울기 평가 60,622번"
+assert first_below(adapt_curves[6], 1e-8) == (31, 62) and hva_pts[6][-1][0] == 18 and hva_pts[6][-1][2] == 90, "5절 (B)·1절: n = 6 에서 ADAPT 는 게이트 31·CNOT 62, HVA 는 파라미터 18·CNOT 90"
 tB = time.time() - T0 - tA
 
 # =====================================================================
@@ -421,8 +470,12 @@ for m, n in [(250, 250), (1000, 1000), (4000, 4000)]:
         row.append(np.mean(ex))
     fkv_curves[m] = row
     print(f"    {m:4d}×{n:<4d}      {srank:5.2f}     {opt:.3f}    | " + " ".join(f"{e:7.4f}" for e in row) + f"| {sq.reads/(m*n):.4f}")
+    assert abs(srank - 3.2) < 5e-2 and abs(sq.reads / (m * n) - {250: 10.24, 1000: 0.64, 4000: 0.04}[m]) < 1e-9, "5절 (C): 안정 계수 3.2, r = 800 에서 읽은 성분은 250² 의 10배·4000² 의 4%"
+    assert np.allclose(row, {250: (0.0197, 0.0103, 0.0042, 0.0020, 0.0011, 0.0005), 1000: (0.0230, 0.0094, 0.0041, 0.0021, 0.0010, 0.0005),
+                             4000: (0.0199, 0.0096, 0.0040, 0.0022, 0.0010, 0.0005)}[m], atol=5e-5), "5절 (C) 초과 오차 표 (r = 25 … 800, 5회 평균)"
 sl = np.polyfit(np.log(r_list), np.log(fkv_curves[1000]), 1)[0]
 print(f"    1000×1000 곡선의 로그-로그 기울기 {sl:.2f} (초과 오차 ∝ 1/r 이면 −1)")
+assert abs(sl - (-1.07)) < 5e-3, "5절 (C): 로그-로그 기울기 −1.07"
 
 print("\nC2) 추천 질의: 사용자 i의 계수-5 근사 행 (A_k)_i 를 표본만으로 — 4000×4000, r = c = 400, 내적 표본 s = 400")
 A, sq = mats[4000]; m, n = A.shape
@@ -450,6 +503,9 @@ for i in users:
     lam = coef.T @ (A[idx] @ A[i]); xhat = A[idx].T @ (coef @ lam); xtrue = (A[i] @ Vk) @ Vk.T
     rel_exact.append(np.linalg.norm(xhat - xtrue) / np.linalg.norm(xtrue))
 print(f"    (내적을 정확히 계산하면 평균 {np.mean(rel_exact):.3f} — 나머지는 내적 표본 오차)")
+assert stage1 == 160000 and m * n == 16000000 and int(np.mean(qreads)) == 160400, "5절 (C) 추천 질의: 부분공간 단계 160,000개(전체의 1%), 질의당 160,400개"
+assert abs(np.mean(rel) - 0.172) < 5e-4 and abs(np.max(rel) - 0.272) < 5e-4 and abs(np.mean(rel_exact) - 0.142) < 5e-4, "5절 (C) 추천 질의: 상대 오차 평균 0.17 (정확한 내적이면 0.14) — 스크립트 0.172, 0.142"
+assert round(float(np.sum(prec)) * 10) == 161, "5절 (C) 추천 질의: 상위 10개 추천 일치율 평균 0.81 (200개 중 161개)"
 
 print("\nC3) 어디서 깨지는가 — 안정 계수 ‖A‖_F²/‖A‖² 의존성 (1000×1000, r = 200, 5회 평균)")
 print("    Gram 오차 = ‖AᵀA − SᵀS‖₂/‖A‖²,  대략 (안정 계수)/√r;  10% 오차에 필요한 r ≈ (안정 계수/0.1)²")
@@ -469,6 +525,10 @@ for name, A_ in cases:
     need = (srank / 0.1) ** 2
     srank_rows.append((name, srank, np.mean(errs)))
     print(f"    {name:24s}   {srank:7.1f}      {np.mean(errs):6.3f}          {srank/np.sqrt(200):6.2f}        {need:9.2e}        {'행렬의 행 수보다 적음' if need < N else '행렬 전체(1000행)보다 많음'}")
+for (name_, srank_, err_), (s_md, s_tol, e_md, e_tol, need_md, need_dig) in zip(srank_rows, [(3.0, 0.05, 0.136, 5e-4, 9e2, 1), (40, 0.5, 0.966, 5e-4, 1.6e5, 2),
+                                                                                           (300, 0.5, 4.41, 5e-3, 9e6, 1), (375, 0.5, 5.84, 5e-3, 1.4e7, 2)]):
+    assert abs(srank_ - s_md) < s_tol and abs(err_ - e_md) < e_tol, "5절 (C) 안정 계수 표: 안정 계수, r = 200 의 Gram 오차(5회 평균)"
+    assert _sig((srank_ / 0.1) ** 2, need_md, need_dig), "5절 (C): 어림한 필요 표본 수 (안정 계수/0.1)² = 9×10², 1.6×10⁵, 9×10⁶, 1.4×10⁷"
 tC = time.time() - T0 - tA - tB
 
 # =====================================================================
@@ -514,6 +574,8 @@ for name in ("TFIM 1D", "TFIM 1D + 세로장", "TFIM 1D + 다음 이웃 ZZ", "XY
     T = model_terms(name, 6); degs = [max(majorana_degree(s, 6, ax) for s in T) for ax in "XYZ"]
     ok = min(degs) <= 2; ff_rows.append((name, degs, ok))
     print(f"    {name:26s}   {len(T):3d}     {degs[0]}      {degs[1]}      {degs[2]}     {'자유 페르미온' if ok else '상호작용(이 변환으로는 2차 아님)'}")
+assert [min(r[1]) for r in ff_rows] == [2, 11, 4, 2, 4, 10], "5절 (D) Majorana 차수 표: TFIM 2, +세로장 11, +다음 이웃 ZZ 4, XY 2, Heisenberg 4, 2D TFIM 10"
+assert [bool(r[2]) for r in ff_rows] == [True, False, False, True, False, False], "5절 (D) Majorana 차수 표: 자유 페르미온은 TFIM 1D 와 XY 사슬뿐"
 
 
 def majorana_generator(n, J=1.0, h=1.0):
@@ -559,6 +621,7 @@ for t_, G in zip(times, Gs):
     dX.append(max(abs(xs[j] - G[2 * j, 2 * j + 1]) for j in range(n)))
 print(f"\nD2) 검산 (n = 12, |+…+⟩ → 임계 TFIM, t = {times}): 상태벡터 vs 24×24 행렬")
 print(f"    반쪽 엔트로피 최대 차 {max(dS):.1e} 비트,  ⟨X_j⟩ 최대 차 {max(dX):.1e}")
+assert max(dS) < 1e-10 and max(dX) < 1e-10, "5절 (D): n = 12 에서 상태벡터와 24×24 행렬 계산이 일치(10⁻¹³ 수준)"
 
 print("\nD3) 같은 급랭을 n = 1000에서 — 2000×2000 행렬만으로")
 t1 = time.time(); big_t = [2, 5, 10, 20, 40]; Gb = ff_quench(1000, big_t); ff_big = []
@@ -568,6 +631,9 @@ for t_, G in zip(big_t, Gb):
     print(f"    {t_:3d}        {S_:7.2f}                 {2.0**S_:.1e}")
 rate = (ff_big[-1][1] - ff_big[1][1]) / (big_t[-1] - big_t[1])
 print(f"    성장률 {rate:.3f} 비트/단위시간 (t = 5~40),  계산 시간 {time.time()-t1:.1f} s  — 상태벡터라면 2^1000 차원")
+assert np.allclose([s_ for _, s_ in ff_big], [2.00, 4.75, 9.34, 18.53, 36.90], atol=5e-3), "5절 (D) n = 1000 급랭 표: 반쪽 엔트로피 S (t = 2, 5, 10, 20, 40)"
+assert all(_sig(2.0 ** s_, v_md) for (_, s_), v_md in zip(ff_big, (4.0, 27, 6.5e2, 3.8e5, 1.3e11))), "5절 (D) n = 1000 급랭 표: MPS 결합 차원 하한 2^S"
+assert abs(rate - 0.918) < 5e-4, "5절 (D): S 성장률 0.92 비트/단위시간 (스크립트 0.918)"
 
 print("\nD4) Wick(가우스성) 검사: 2점 상관만으로 만든 엔트로피 S_가우스 와 실제 S (n = 12, t = 2, 반쪽 블록)")
 maj = []
@@ -588,6 +654,9 @@ for name, g in (("TFIM (자유)", 0.0), ("TFIM + 세로장 0.5", 0.5), ("TFIM + 
     St, Sg = half_entropy_sv(psi, n), gaussian_entropy(Gm, n // 2); wick_rows.append((name, St, Sg))
     print(f"    {name:22s}   {St:7.4f}    {Sg:7.4f}     {Sg-St:8.1e}")
 
+assert np.allclose([(r[1], r[2]) for r in wick_rows], [(2.0014, 2.0014), (1.6841, 3.8453), (1.3415, 4.1897)], atol=5e-5), "5절 (D) Wick 표: 실제 S, 가우스 S (+…+ 시작 세 줄)"
+assert abs(wick_rows[0][2] - wick_rows[0][1]) < 1e-10 and abs(wick_rows[1][2] - wick_rows[1][1] - 2.2) < 5e-2 and abs(wick_rows[2][2] - wick_rows[2][1] - 2.8) < 5e-2, \
+    "5절 (D) Wick 표: 차이 10⁻¹³ 수준(자유), 2.2, 2.8 (세로장)"
 print("\nD5) stoquastic 검사 (n = 6): 계산 기저에서 H의 비대각 원소가 모두 ≤ 0 이면 양자 몬테카를로에 부호 문제가 없다")
 print("    기저에 따라 달라지므로, 한쪽 부분격자(홀수 자리)에 Z를 곱하는 회전도 함께 본다")
 
@@ -616,6 +685,8 @@ for name, terms in sto_cases:
     H_ = ham_from(terms, n6); a, ai = max_offdiag(H_); b, bi = max_offdiag(Zodd @ H_ @ Zodd)
     ok = (a <= 1e-12 and ai < 1e-12) or (b <= 1e-12 and bi < 1e-12); sto_rows.append((name, a, b, ok))
     print(f"    {name:32s}      {a:+.1f}                    {b:+.1f}                 {'stoquastic → QMC 가능' if ok else '부호 문제(이 두 기저에서는)'}")
+assert [(r[1], r[2], bool(r[3])) for r in sto_rows] == [(0.0, 1.0, True), (0.0, 1.0, True), (2.0, 0.0, True), (2.0, 1.0, False)], \
+    "5절 (D) stoquastic 표: 비대각 최댓값(원래 기저, 회전 뒤)과 판정"
 tD = time.time() - T0 - tA - tB - tC
 
 # =====================================================================
@@ -626,6 +697,7 @@ _, trg = sbm_cnot_count(SWAP); Usw = SWAP / np.linalg.det(SWAP) ** 0.25
 gsw = Usw @ np.kron(Y, Y) @ Usw.T @ np.kron(Y, Y)
 print(f"E1) γ(SWAP) = ({gsw[0,0]:.3f})·I 인가: {np.allclose(gsw, gsw[0,0]*np.eye(4))},  tr γ = {trg:.3f} → 실수가 아니므로 CNOT 3개")
 print("    파라미터 하한 ⌈(4ⁿ−3n−1)/4⌉: " + ", ".join(f"n={n_}: {int(np.ceil((4**n_-3*n_-1)/4))}" for n_ in (2, 3, 4)) + "  (CCZ의 6개는 '일반' 유니터리가 아니라서 모순이 아님)")
+assert np.allclose(gsw, -1j * np.eye(4)) and abs(trg - (-4j)) < 1e-9 and sbm_cnot_count(SWAP)[0] == 3, "8절 문제 1 (c): γ(SWAP) = −i·I, tr γ = −4i → CNOT 3개"
 for n_ in (4, 6):
     H_ = tfim(n_).toarray(); w_, v_ = np.linalg.eigh(H_)
     Px_ = pauli(n_, {i: "X" for i in range(n_)}).toarray().real
@@ -633,11 +705,14 @@ for n_ in (4, 6):
     w_even = (1 + zero_ @ Px_ @ zero_) / 2
     par_ = np.real(np.einsum("ij,ij->j", v_.conj(), Px_ @ v_)); e_odd_ = w_[np.where(par_ < -0.5)[0][0]]
     print(f"E2) n = {n_}: |0…0⟩의 패리티 짝/홀 구역 가중치 = {w_even:.2f}/{1-w_even:.2f} → 도달 가능한 최저 에너지 = (E₀+E₁)/2, 오차 하한 (E₁−E₀)/2 = {(e_odd_-w_[0])/2:.4f}")
+    assert abs(w_even - 0.5) < 1e-12 and abs((e_odd_ - w_[0]) / 2 - {4: 0.3473, 6: 0.2411}[n_]) < 5e-5, "8절 문제 2: 구역 가중치 1/2 씩, 오차 하한 (E₁ − E₀)/2 = 0.3473 (n = 4), 0.2411 (n = 6)"
 c_fit = srank_rows[0][2] * np.sqrt(200) / srank_rows[0][1]
 t_svd = time.time(); _ = np.linalg.svd(rng.normal(size=(10000, 192)), compute_uv=False); t_svd = time.time() - t_svd
 print(f"E3) Gram 오차 ≈ c·(안정 계수)/√r 의 c = {c_fit:.2f} (계수 5 행렬, r = 200 측정) → 안정 계수 3, 오차 0.05에 필요한 r ≈ {(c_fit*3/0.05)**2:.0f}")
 r_e3 = (c_fit * 3 / 0.05) ** 2
 print(f"    10,000×192 행렬: 표본 행 {r_e3:.0f}개를 통째로 읽으면 성분 {r_e3*192:,.0f}개 = 전체 {10000*192:,}개의 {r_e3*192/(10000*192):.0%}")
+assert abs(c_fit - 0.65) < 5e-3 and f"{r_e3:.0f}" == "1507" and f"{r_e3*192:,.0f}" == "289,354" and abs(r_e3 * 192 / (10000 * 192) - 0.15) < 5e-3, \
+    "8절 문제 3: c = 0.65, r ≈ 1,500 (스크립트 1507), 성분 2.9×10⁵개 = 전체 1.92×10⁶개의 15%"
 print(f"    10,000×192 조밀 행렬의 전체 SVD: {t_svd:.2f} s — 통째로 읽고 푸는 편이 빠르다")
 
 # =====================================================================
@@ -662,6 +737,11 @@ nc5, ns5, fmin5, fl5 = count_solved([(0, 1), (0, 2), (1, 2)], list(itertools.per
 print(f"    전결합 CNOT 5개 구조별 바닥값의 종류: {sorted(set(fl5.tolist()))}  (구조 전체의 최솟값 {fmin5:.4f})")
 nc7, ns7, fmin7, _ = count_solved([(0, 1), (1, 2)], [(0, 1, 2), (2, 1, 0)], 7, 12)
 print(f"    선형 CNOT 7개, 구조당 시작점 12개: {nc7}묶음 중 {ns7}묶음이 닿음, 최소 비충실도 {fmin7:.4f}")
+assert (nc, ns) == (70, 4) and len(res_all[-1][3]) == 4 and len(both) == 5, "5절 (A) 주의: 시작점 12개 재실행도 70묶음 중 4묶음, 두 실행을 합치면 5묶음"
+assert set(res_all[-1][3]) - set(solved12) == {((0, 1), (0, 2), (0, 1), (1, 2), (1, 2), (0, 2))}, "5절 (A) 주의: 처음 실행만 찾은 구조 01·02·01·12·12·02"
+assert set(solved12) - set(res_all[-1][3]) == {((0, 1), (0, 2), (1, 2), (0, 1), (1, 2), (0, 2))}, "5절 (A) 주의: 재실행만 찾은 구조 01·02·12·01·12·02"
+assert sorted(set(fl5.tolist())) == [0.1464, 0.2714, 0.375] and abs(fmin5 - 0.1464) < 5e-5, "5절 (A) 주의: CNOT 5개에서 구조가 멈춘 값은 0.375, 0.2714, 0.1464 의 세 가지"
+assert (nc7, ns7) == (36, 0) and abs(fmin7 - 0.1464) < 5e-5, "5절 (A) 주의: 선형 CNOT 7개(시작점 12개)는 36묶음 중 닿은 것이 없고 최소 비충실도 0.1464"
 
 # F2. Gram 오차 대 표본 행 수 (1000×1000, 3회 평균): 10% 에 닿는 r 을 직접 잰다
 print("F2) Gram 오차 ‖AᵀA − SᵀS‖₂/‖A‖² 대 표본 행 수 r (행렬의 행 수는 1000; r > 1000 은 전체를 읽는 것보다 많다)")
@@ -678,6 +758,10 @@ for name, A_ in cases:
         row.append(np.mean(e))
     gram_tab.append((name, row)); print(f"    {name:24s}   " + "  ".join(f"{x:8.3f}" for x in row))
 print(f"    3중 대각 행렬의 조건수: {np.linalg.cond(lap):.2e}  (N² 에 비례)")
+# 본문 표는 r = 1,000 · 4,000 · 16,000 열을 소수 2~3자리로 적는다. 여기서는 스크립트가 찍는 소수 3자리로 검사한다.
+for (name_, row_), row_md in zip(gram_tab, [(0.129, 0.049, 0.031, 0.016), (0.894, 0.417, 0.195, 0.096), (4.569, 1.565, 0.835, 0.340), (8.128, 1.870, 0.812, 0.392)]):
+    assert np.allclose(row_, row_md, atol=5e-4), "5절 (C) 안정 계수 표: Gram 오차 대 표본 행 수 (r = 200, 1,000, 4,000, 16,000; 3회 평균)"
+assert _sig(np.linalg.cond(lap), 4.06e5, 3), "5절 (C): 3중 대각 행렬의 조건수 4×10⁵ (스크립트 4.06e+05)"
 
 # F3. 동역학 리 대수(DLA) 차원: HVA 생성원 {ΣZZ, ΣX} 대 ADAPT 풀 {Y_iZ_j}
 def dla_dim(gens, tol=1e-7, cap=600):
@@ -699,15 +783,20 @@ def dla_dim(gens, tol=1e-7, cap=600):
 print("F3) 동역학 리 대수 차원")
 for n_ in (3, 4, 5):
     zz_ = sum(pauli(n_, {i: "Z", i + 1: "Z"}) for i in range(n_ - 1)).toarray(); xs_ = sum(pauli(n_, {i: "X"}) for i in range(n_)).toarray()
-    msg = f"    n = {n_}: HVA 생성원 {{ΣZZ, ΣX}} → {dla_dim([zz_, xs_])} (= n²)"
-    if n_ < 5: msg += f",  ADAPT 풀 {{Y_iZ_j}} → {dla_dim([P.toarray() for _, P, _ in make_pool(n_, 'YZ')])}"
+    dla_h = dla_dim([zz_, xs_]); msg = f"    n = {n_}: HVA 생성원 {{ΣZZ, ΣX}} → {dla_h} (= n²)"
+    assert dla_h == n_ ** 2, "7절: HVA 의 동역학 리 대수는 n = 3, 4, 5 에서 9, 16, 25차원"
+    if n_ < 5:
+        dla_p = dla_dim([P.toarray() for _, P, _ in make_pool(n_, 'YZ')]); msg += f",  ADAPT 풀 {{Y_iZ_j}} → {dla_p}"
+        assert dla_p == {3: 12, 4: 56}[n_], "7절: ADAPT 풀의 리 대수는 n = 3, 4 에서 12, 56차원"
     print(msg)
 deg_pool = sorted({(abs(i - j), majorana_degree({i: "Y", j: "Z"}, 4, "X")) for i in range(4) for j in range(4) if i != j})
 print(f"    풀 원소 Y_iZ_j 의 Majorana 차수 (|i−j|, 차수): {deg_pool}")
+assert deg_pool == [(1, 2), (2, 4), (3, 6)], "7절: 풀 Y_iZ_j 는 거리 2 에서 Majorana 4차, 거리 3 에서 6차"
 
 # F4. 17장의 급랭(|0…0⟩ 시작)은 이 Jordan–Wigner 에서 가우스 상태 하나가 아니다 — 패리티 성분 GHZ± 는 각각 가우스
 print("F4) Wick 검사, 임계 TFIM 급랭 n = 12, t = 2: 시작 상태별 실제 S 와 가우스 S")
 n = 12
+f4_rows = []                                             # 회귀 검사용 기록
 zero12 = np.zeros(2 ** n, dtype=complex); zero12[0] = 1; one12 = np.zeros(2 ** n, dtype=complex); one12[-1] = 1
 for name, psi0 in (("|0…0⟩", zero12), ("GHZ₊ = (|0…0⟩+|1…1⟩)/√2", (zero12 + one12) / np.sqrt(2)), ("GHZ₋ = (|0…0⟩−|1…1⟩)/√2", (zero12 - one12) / np.sqrt(2))):
     psi = expm_multiply(-2.0j * H12, psi0); Gm = np.zeros((n, n))
@@ -718,6 +807,10 @@ for name, psi0 in (("|0…0⟩", zero12), ("GHZ₊ = (|0…0⟩+|1…1⟩)/√2"
     c1 = max(abs(np.vdot(psi, maj[a] @ psi)) for a in range(n))
     s_sv, s_g = half_entropy_sv(psi, n), gaussian_entropy(Gm, n // 2)
     print(f"    {name:28s}  S_실제 = {s_sv:.4f}   S_가우스 = {s_g:.4f}   차이 = {abs(s_g - s_sv):.1e}   max|⟨c_a⟩| = {c1:.3f}")
+    f4_rows.append((s_sv, s_g, c1))
+assert np.allclose([(r[0], r[1]) for r in f4_rows], [(1.4980, 2.4979), (2.4977, 2.4977), (2.4979, 2.4979)], atol=5e-5), "5절 (D) Wick 표: |0…0⟩, GHZ₊, GHZ₋ 에서 시작한 실제 S, 가우스 S"
+assert abs(f4_rows[0][1] - f4_rows[0][0] - 1.0) < 5e-2 and abs(f4_rows[1][1] - f4_rows[1][0]) < 1e-10 and abs(f4_rows[2][1] - f4_rows[2][0]) < 1e-10, \
+    "5절 (D) Wick 표: |0…0⟩ 은 차이 1.0 비트, GHZ± 는 10⁻¹³ 수준"
 
 # F5. "시작점을 늘리면" 의 근거: (a) CCZ 를 6개로 만드는 구조별 시작점 하나의 성공률, (b) HVA 의 최선 오차
 print("F5) 시작점 수 의존성")
@@ -728,12 +821,17 @@ for s_ in six:
     tm = Template(3, list(s_)); ok = sum(instantiate(tm, CCZ, rngF, starts=1)[0] < 1e-10 for _ in range(40)); rates6.append(ok / 40)
     print(f"        {' '.join(f'{a}{b}' for a, b in s_)}:  {ok}/40 = {ok/40:.2f}")
 print(f"        한 번이라도 닿은 구조 {sum(r > 0 for r in rates6)}개, 성공률 범위 {min(rates6):.2f}~{max(rates6):.2f}")
+assert [round(r * 40) for r in rates6] == [27, 26, 5, 10, 26, 4] and sum(r > 0 for r in rates6) == 6, "5절 (A) 주의: 시작점 하나의 성공률 10~68% (40번 중 27, 26, 5, 10, 26, 4), 닿는 묶음은 적어도 6개"
+assert six[-1] == ((0, 1), (0, 2), (1, 2), (1, 2), (0, 1), (0, 2)) and six[-1] not in both, "5절 (A) 주의: 두 실행이 모두 놓친 01·02·12·12·01·02 도 40번 중 4번 닿는다"
 Hd6 = tfim(6).toarray(); E06 = np.linalg.eigvalsh(Hd6)[0]; plus6 = np.ones(64, dtype=complex) / 8
 hva_more = {}
 for p_ in (6, 8):
     t5 = time.time(); Eb, _, fin_, _ = hva(Hd6, 6, p_, plus6, rngF, starts=250); hva_more[p_] = Eb - E06
     old = dict((pp // 2, e) for pp, e, _ in hva_pts[6])[p_]
     print(f"    (b) HVA n = 6, p = {p_}: 무작위 시작점 250개 중 최선 오차 {Eb-E06:.2e} (B3 의 21개 중 최선 {old:.2e}, {old/max(Eb-E06,1e-16):.0f}배)  ({time.time()-t5:.0f} s)", flush=True)
+old6 = dict((pp // 2, e) for pp, e, _ in hva_pts[6])
+assert _sig(hva_more[6], 3.21e-4, 3) and f"{old6[6] / hva_more[6]:.0f}" == "7", "5절 (B): 시작점 250개면 n = 6, p = 6 은 2.3×10⁻³ → 3.2×10⁻⁴ (7배)"
+assert _sig(hva_more[8], 4.98e-6, 3) and f"{old6[8] / hva_more[8]:.0f}" == "12", "5절 (B): 시작점 250개면 n = 6, p = 8 은 5.9×10⁻⁵ → 5.0×10⁻⁶ (12배)"
 tF = time.time() - tF
 
 # ---------- 그림 ----------

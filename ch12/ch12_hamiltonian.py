@@ -2,6 +2,7 @@
 실행: python ch12_hamiltonian.py
 환경: Python 3.13, numpy 2.5, scipy (expm). 큐비트 순서: 빅 엔디안(3장 규약). ħ = 1.
 """
+import os
 import numpy as np
 from scipy.linalg import expm
 
@@ -163,7 +164,7 @@ p = qpe_energy_probs(U, trial_plus, 8); Es = np.arange(2**8)/2**8 * 2*np.pi/tau 
 ax3.plot(Es, p, color="#4C6EF5");
 for e in evals: ax3.axvline(e, ls=":", color="#868E96", lw=0.6)
 ax3.set_xlabel("E (k 로부터 환산)"); ax3.set_ylabel("확률"); ax3.set_title("QPE 에너지 분포, 시험 |++++>"); ax3.set_xlim(evals[0]-0.5, evals[-1]+0.5)
-plt.tight_layout(); plt.savefig("ch12_results.png", dpi=150); print("6) saved ch12_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch12_results.png"), dpi=150); print("6) saved ch12_results.png")
 
 # ── 게이트 비용 기록 (2큐비트 게이트 / 깊이 / T-count) ──
 # 위에서 행렬로 계산한 Trotter·QPE·진폭 추정 회로를 게이트 리스트로 다시 짜서 세고, 위의 행렬·분포와 같은지(전역 위상 제외) 확인한다.

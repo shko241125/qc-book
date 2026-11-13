@@ -114,7 +114,7 @@ print(np.linalg.norm(Operator(d).data - Operator(qc).data))   # ε 수준 — �
 <p>(c)의 미실행 예측값 "7 또는 4"는 확정이 아니다. 트랜스파일러는 SWAP 삽입 대신 더 짧은 라우팅을 고를 수 있고, <code>optimization_level</code>과 시드에 따라 다르다. 다음 세션에서 실행해 실제 값으로 바꾼다. (d)의 SK 패스는 <code>to_matrix</code>가 있는 단일 큐비트 게이트(<code>rx</code>, <code>ry</code> 포함)를 바로 근사하고 전역 위상도 기록한다 — 실행 시 <code>recursion_degree</code>에 따른 길이만 확인한다.</p>
 <h2>5. 시뮬레이션 결과</h2>
 <p>모든 수치는 <code>ch04_universality.py</code>를 <code>seed=7</code>로 실행한 출력이다(실행 시간 1.2초).</p>
-<p><strong>HTHT의 회전각.</strong> 실측 θ = 1.096057 rad = 0.348886π, cos(θ/2) = 0.853553 = cos²(π/8). 수식과 일치한다.</p>
+<p><strong>HTHT의 회전각.</strong> 계산값 θ = 1.096057 rad = 0.348886π, cos(θ/2) = 0.853553 = cos²(π/8). 수식과 일치한다.</p>
 <p><strong>{H, T} 전수 탐색.</strong> 목표 U = Rx(1.0)Ry(0.7)을 길이 L 이하의 모든 단어로 근사했다. 오차는 두 SU(2) 원소 사이의 회전각이다.</p>
 <table>
 <thead>

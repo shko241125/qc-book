@@ -2,6 +2,7 @@
 실행: python ch10_qpe.py
 환경: Python 3.13, numpy 2.5 (SDK 없이 동작). 큐비트 순서: 빅 엔디안(3장 규약). 계수 레지스터 q[0:t] (q[0] 최상위), 고유상태 레지스터 q[t:].
 """
+import os
 import numpy as np
 
 np.set_printoptions(precision=4, suppress=True, linewidth=120)
@@ -170,7 +171,7 @@ ax2.semilogy(ts, errs_t, 'o-', color="#4C6EF5", label="E|오차|"); ax2.semilogy
 ax2.set_xlabel("계수 비트 t"); ax2.set_title("정밀도는 비트당 2배"); ax2.legend(frameon=False, fontsize=8)
 for lam, p in noisy.items(): ax3.plot(np.arange(16), p, 'o-', ms=3, label=f"λ={lam}")
 ax3.set_xlabel("측정값 k (정답 2)"); ax3.set_ylabel("확률"); ax3.set_title("위상 감쇠가 피크를 퍼뜨린다 (t=4)"); ax3.legend(frameon=False, fontsize=7)
-plt.tight_layout(); plt.savefig("ch10_results.png", dpi=150); print("5) saved ch10_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch10_results.png"), dpi=150); print("5) saved ch10_results.png")
 
 # ── 게이트 비용 기록 (2큐비트 게이트 / 깊이 / T-count) ──
 # 본문 회로를 게이트 리스트로 다시 짜서 세고, 위에서 만든 행렬과 같은지(전역 위상 제외) 확인한다. 난수 미사용.

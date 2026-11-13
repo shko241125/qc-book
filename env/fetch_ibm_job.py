@@ -6,6 +6,8 @@
 그리고 작업 생성 시각 직전의 보정값(backend.properties(datetime=...)): 쓰인 큐비트의 T1·T2·판독 오류,
 쓰인 sx·x·cz 의 오류율. numpy 스크립트(부록 A)는 이 파일만 읽으므로 네트워크 없이 다시 돌릴 수 있다.
 작업 입력의 구조(inputs['quantum_program'].items[i].circuit)는 qiskit-ibm-runtime 0.52 의 클라이언트 쪽 프리미티브 기준이다.
+2026-11-11 에 실행한 것은 이전 판이다. 그 뒤 더한 것(항목별 측정 시각, init_error, 게이트 길이, Sampler counts, 끝나지 않은 작업 건너뛰기,
+이미 있는 파일 거절 — 검토 R11)은 작성됨, 미실행이다. 추가 항목은 받지 못하면 None 으로 남고 기존 항목은 그대로다.
 """
 import argparse
 import json
@@ -32,46 +34,73 @@ def gate_list(circ):
 
 
 def calib(props, qubits, gates):
+    """쓰인 큐비트·게이트의 보정값. 항목마다 측정 시각이 따로 있으므로(last_update_date 는 마지막 보정 갱신 시각일 뿐이다) 함께 남긴다.
+    init_error 는 직전 실험이 |1⟩ 이었을 때 초기화 뒤에 남는 |1⟩ 의 비율 — prob_meas1_prep0 과 다른 양이다(부록 A 5절)."""
     q = {}
     for k in sorted(qubits):
         def qp(name):
             try:
-                return props.qubit_property(k, name)[0]
+                v, t = props.qubit_property(k, name)       # (값, 측정 시각)
+                return v, str(t)
             except Exception:
-                return None
+                return None, None
+        vals = {n: qp(n) for n in ("T1", "T2", "readout_error", "prob_meas1_prep0", "prob_meas0_prep1", "init_error", "readout_length")}
         q[k] = {"T1_us": props.t1(k) * 1e6, "T2_us": props.t2(k) * 1e6, "readout_error": props.readout_error(k),
-                "p_meas1_prep0": qp("prob_meas1_prep0"), "p_meas0_prep1": qp("prob_meas0_prep1")}
-    g = {}
+                "p_meas1_prep0": vals["prob_meas1_prep0"][0], "p_meas0_prep1": vals["prob_meas0_prep1"][0],
+                "init_error": vals["init_error"][0], "readout_length_s": vals["readout_length"][0],
+                "measured_at": {n: t for n, (_, t) in vals.items()}}
+    g, glen = {}, {}
     for name, qs in sorted({(n, tuple(qs)) for n, qs, _, _ in gates if n in ("sx", "x", "cz")}):
+        key = f"{name}{list(qs)}"
         try:
-            g[f"{name}{list(qs)}"] = props.gate_error(name, list(qs))
+            g[key] = props.gate_error(name, list(qs))
         except Exception:
-            g[f"{name}{list(qs)}"] = None
-    return {"last_update_date": str(props.last_update_date), "qubits": q, "gates": g}
+            g[key] = None
+        try:
+            glen[key] = props.gate_length(name, list(qs))  # 초. 부록 A 의 재현은 지금 14장의 가정(32·68 ns)을 쓴다
+        except Exception:
+            glen[key] = None
+    return {"last_update_date": str(props.last_update_date), "qubits": q, "gates": g, "gate_length_s": glen}
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("job_ids", nargs="+"); ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    p = (ROOT / a.out).resolve()
+    if p.exists():
+        sys.exit(f"{a.out} 이 이미 있다. runs/ 의 기록은 고치지 않는다 — 다른 이름을 준다.")
     service = get_service()
     out = {}
     for jid in a.job_ids:
         job = service.job(jid)
         be = job.backend()
-        items = job.inputs["quantum_program"].items
+        try:
+            items = job.inputs["quantum_program"].items
+        except (KeyError, AttributeError):
+            sys.exit(f"{jid}: 작업 입력에 quantum_program 이 없다 — 클라이언트 쪽 프리미티브(runtime 0.50 이상)로 낸 작업만 읽는다.")
         pubs = [gate_list(it.circuit) for it in items]
-        used = {q for p in pubs for _, qs, _, _ in p for q in qs}
+        used = {q for pb in pubs for _, qs, _, _ in pb for q in qs}
         props = be.properties(datetime=job.creation_date)
-        out[jid] = {"backend": be.name, "created": str(job.creation_date), "status": str(job.status()),
-                    "pubs": pubs, "calibration": calib(props, used, [g for p in pubs for g in p])}
-        data = job.result()[0].data
-        if hasattr(data, "evs"):                 # Estimator: 기댓값과 표준오차(목표 precision 이 아니라 실제 값)
+        status = str(job.status())
+        out[jid] = {"backend": be.name, "created": str(job.creation_date), "status": status,
+                    "pubs": pubs, "calibration": calib(props, used, [g for pb in pubs for g in pb])}
+        if "DONE" not in status.upper():         # 끝나지 않은 작업의 result() 는 끝날 때까지 막고, 실패한 작업은 예외를 낸다
+            print(f"{jid}: 상태 {status} — 회로와 보정값만 받고 결과는 받지 않았다")
+            continue
+        res = job.result()
+        data = res[0].data
+        if hasattr(data, "evs"):                 # Estimator: 기댓값과 표준오차(목표 precision 이 아니라 결과와 함께 온 값)
             out[jid]["estimator"] = {"evs": float(data.evs), "stds": float(data.stds)}
-        print(f"{jid}: {be.name}, PUB {len(pubs)}개, 큐비트 {sorted(used)}, 보정 시각 {props.last_update_date}")
-    p = ROOT / a.out
+        else:                                    # Sampler: PUB 별 counts 도 남긴다(실행 기록과 대조용)
+            try:
+                out[jid]["counts"] = [pub.join_data().get_counts() for pub in res]
+            except Exception as e:
+                out[jid]["counts"] = f"받지 못함: {type(e).__name__}: {e}"
+        print(f"{jid}: {be.name}, PUB {len(pubs)}개, 큐비트 {sorted(used)}, 마지막 보정 갱신 {props.last_update_date}")
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print("저장:", p.relative_to(ROOT))
+    print("저장:", p)
 
 
 if __name__ == "__main__":

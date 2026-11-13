@@ -2,6 +2,7 @@
 실행: python ch11_shor.py
 환경: Python 3.13, numpy 2.5 (SDK 없이 동작). 큐비트 순서: 빅 엔디안(3장 규약). 계수 레지스터 t비트, 작업 레지스터 n = ⌈log2 N⌉ 비트.
 """
+import os
 import numpy as np
 from math import gcd
 from fractions import Fraction
@@ -160,7 +161,7 @@ ax1.stem(xs, fx, basefmt=" "); ax1.set_xlabel("x"); ax1.set_ylabel("7^x mod 15")
 ax2.plot(np.arange(2**t)/2**t, p, color="#4C6EF5"); ax2.set_xlabel("측정값 k/2^t"); ax2.set_ylabel("확률"); ax2.set_title("a=7, N=15: 피크 = s/4")
 ax3.plot(np.arange(2**t2)/2**t2, p21, color="#F03E3E"); ax3.set_xlabel("측정값 k/2^t"); ax3.set_title("a=2, N=21: 피크 = s/6 (비정확)")
 for s in range(6): ax3.axvline(s/6, ls=":", color="#868E96", lw=0.8)
-plt.tight_layout(); plt.savefig("ch11_results.png", dpi=150); print("6) saved ch11_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch11_results.png"), dpi=150); print("6) saved ch11_results.png")
 
 # ── 게이트 비용 기록 (2큐비트 게이트 / 깊이 / T-count) ──
 # 위 시뮬레이션은 제어 U_a 를 치환으로 직접 적용했다(게이트 없음). 여기서는 N = 15, a = 7 에 한해 '컴파일된' 게이트 회로를

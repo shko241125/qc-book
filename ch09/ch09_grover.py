@@ -2,6 +2,7 @@
 실행: python ch09_grover.py
 환경: Python 3.13, numpy 2.5 (SDK 없이 동작). 큐비트 순서: 빅 엔디안(3장 규약).
 """
+import os
 import numpy as np
 
 np.set_printoptions(precision=4, suppress=True, linewidth=120)
@@ -140,7 +141,7 @@ ns = [3, 4, 6, 8, 10]; ax2.plot(ns, [r[1] for r in rows], 'o-', color="#4C6EF5",
 ax2.set_xlabel("큐비트 수 n"); ax2.set_ylabel("반복 횟수"); ax2.set_yscale("log"); ax2.set_title("최적 반복 ∝ √N"); ax2.legend(frameon=False, fontsize=8)
 for lam, p in noisy.items(): ax3.plot(range(kmax+1), p, 'o-', ms=3, label=f"λ={lam}")
 ax3.set_xlabel("반복 k"); ax3.set_ylabel("P(표시 원소)"); ax3.set_title("위상 감쇠가 반복마다 깎는다 (n=6)"); ax3.legend(frameon=False, fontsize=8)
-plt.tight_layout(); plt.savefig("ch09_results.png", dpi=150); print("7) saved ch09_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch09_results.png"), dpi=150); print("7) saved ch09_results.png")
 
 # ── 8. 게이트 비용 기록 (2큐비트 게이트 / 깊이 / T-count) ─────────────
 # 4절의 n = 3, 표시 |101> 회로를 게이트 리스트로 다시 짜서 위의 행렬 G = D·O 와 같은지 확인한 뒤 센다(책 앞 「기호와 비용 단위」의 규약).

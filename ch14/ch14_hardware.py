@@ -401,31 +401,42 @@ for ax, name in zip(axs.ravel(), [k for k in results if k != "HVA"]):
 fig.tight_layout(); fig.savefig("ch14_results.png", dpi=130)
 print("6) saved ch14_results.png")
 
-# ---------- 7) QPU 실측 대조 (ch14_submit.py real 의 기록 — 파일이 없으면 건너뛴다) ----------
+# ---------- 7) QPU 실측 대조 — runs/ 의 고정 사본만 읽는다 ----------
 import json, pathlib
 _here = pathlib.Path(__file__).resolve().parent
-_rec = _here / "ch14_record_real.json"
-if _rec.exists():
-    rec = json.loads(_rec.read_text(encoding="utf-8"))
-    # 2026-11-11 실행분은 GHZ 를 measure_all(Qiskit 순서)로 쟀다. bit_order = "book" 인 기록은 모두 책 순서.
-    flip = {"ghz5"} if rec.get("bit_order") != "book" else set()
-    sj = rec["jobs"]["ghz5"]["job_id"]
-    isa_file = next((p for p in sorted((_here.parent / "runs").glob("*_ch14_isa_calib.json"))
-                     if sj in json.loads(p.read_text(encoding="utf-8"))), None)
-    isa_pubs = json.loads(isa_file.read_text(encoding="utf-8"))[sj]["pubs"] if isa_file else None
-    print(f"\n7) QPU 실측 — {rec['backend']} {rec['t']}, {rec['shots']}샷, sampler {sj}, estimator {rec['jobs']['hva'].get('job_id')}, 사용 {rec.get('qpu_seconds')}초")
-    keys = ["ghz5", "bv1011", "grover101", "qpe_t"]
-    for i, (name, key) in enumerate(zip([c[0] for c in CIRCS], keys)):
-        r = results[name]; c = rec["jobs"][key]["counts"]; N = sum(c.values())
-        pm = np.zeros(2 ** r["n"])
-        for b, v in c.items(): pm[int(b[::-1] if key in flip else b, 2)] += v / N
-        good = [k for k in range(2 ** r["n"]) if r["p0"][k] > 0.2]
-        s = pm[good].sum()
-        cz = rec["jobs"][key].get("two_qubit_gates") or (sum(1 for g in isa_pubs[i] if g[0] == "cz") if isa_pubs else None)
-        print(f"   {name:22s}: 실측 성공 {s:.3f} ± {np.sqrt(s * (1 - s) / N):.3f} (예측 {r['succ1']:.3f}, 차 {100 * (s - r['succ1']):+.1f}%p) "
-              f"| TVD {tvd(r['p0'], pm):.3f} | 실기 트랜스파일 CZ {cz} (이 장 라우팅 {r['cz']})")
-    h = rec["jobs"]["hva"]
-    sd = h.get("stds")
-    if sd is None and isa_file:
-        sd = json.loads(isa_file.read_text(encoding="utf-8"))[h["job_id"]]["estimator"]["stds"]
-    print(f"   HVA ⟨H⟩ 실측 {h['evs']:.3f} ± {sd:.3f} (예측 {results['HVA']['e_noisy']:.3f}, 차 {h['evs'] - results['HVA']['e_noisy']:+.3f} = {(h['evs'] - results['HVA']['e_noisy']) / sd:+.1f}σ)")
+# 이 장의 예측을 파일로 남긴다(부록 A 의 스크립트가 읽는다 — 반올림한 값을 손으로 옮기지 않게).
+(_here / "ch14_pred.json").write_text(json.dumps(
+    {"note": "ch14_hardware.py 가 만든 예측값(공개 중앙값 모형). 고치지 말고 스크립트를 다시 돌린다.",
+     "success": dict(zip(["ghz5", "bv1011", "grover101", "qpe_t"], [float(results[c[0]]["succ1"]) for c in CIRCS])),
+     "hva": {"ideal": float(e_ideal), "noisy": float(results["HVA"]["e_noisy"]), "noisy_no_readout": float(e_noro)}},
+    ensure_ascii=False, indent=1), encoding="utf-8")
+# ch14/ch14_record_real.json 은 다음 real --yes 가 덮어쓰므로 5절 표의 출처로 쓰지 않는다. 고정 사본이 없으면 여기서 멈춘다.
+_rec = _here.parent / "runs" / "20261111-063819Z_ibm_fez_ch14_record.json"
+rec = json.loads(_rec.read_text(encoding="utf-8"))
+assert (rec["backend"], rec["shots"]) == ("ibm_fez", 4000)
+assert rec["jobs"]["ghz5"]["job_id"] == "dbq0qmoqtr0c738f53u0" and rec["jobs"]["hva"]["job_id"] == "dbq0qpk4148s739vbffg", "본문 5절이 적은 작업"
+MEAS = {}
+# 2026-11-11 실행분은 GHZ 를 measure_all(Qiskit 순서)로 쟀다. bit_order = "book" 인 기록은 모두 책 순서.
+flip = {"ghz5"} if rec.get("bit_order") != "book" else set()
+sj = rec["jobs"]["ghz5"]["job_id"]
+isa_file = next((p for p in sorted((_here.parent / "runs").glob("*_ch14_isa_calib.json"))
+                 if sj in json.loads(p.read_text(encoding="utf-8"))), None)
+isa_pubs = json.loads(isa_file.read_text(encoding="utf-8"))[sj]["pubs"] if isa_file else None
+print(f"\n7) QPU 실측 — {rec['backend']} {rec['t']}, {rec['shots']}샷, sampler {sj}, estimator {rec['jobs']['hva'].get('job_id')}, 사용 {rec.get('qpu_seconds')}초 (기록: runs/{_rec.name})")
+keys = ["ghz5", "bv1011", "grover101", "qpe_t"]
+for i, (name, key) in enumerate(zip([c[0] for c in CIRCS], keys)):
+    r = results[name]; c = rec["jobs"][key]["counts"]; N = sum(c.values())
+    pm = np.zeros(2 ** r["n"])
+    for b, v in c.items(): pm[int(b[::-1] if key in flip else b, 2)] += v / N
+    good = [k for k in range(2 ** r["n"]) if r["p0"][k] > 0.2]
+    s = pm[good].sum(); MEAS[key] = int(round(s * N))
+    cz = rec["jobs"][key].get("two_qubit_gates") or (sum(1 for g in isa_pubs[i] if g[0] == "cz") if isa_pubs else None)
+    print(f"   {name:22s}: 실측 성공 {s:.4f} ± {np.sqrt(s * (1 - s) / N):.4f} (예측 {r['succ1']:.3f}, 차 {100 * (s - r['succ1']):+.1f}%p) "
+          f"| TVD {tvd(r['p0'], pm):.4f} | 실기 트랜스파일 CZ {cz} (이 장 라우팅 {r['cz']})")
+assert MEAS == {"ghz5": 3682, "bv1011": 3555, "grover101": 3255, "qpe_t": 3689}, "5절 표: 4,000샷 중 정답 수"
+h = rec["jobs"]["hva"]
+sd = h.get("stds")
+if sd is None and isa_file:
+    sd = json.loads(isa_file.read_text(encoding="utf-8"))[h["job_id"]]["estimator"]["stds"]
+print(f"   HVA ⟨H⟩ 실측 {h['evs']:.3f} ± {sd:.3f} (예측 {results['HVA']['e_noisy']:.3f}, 차 {h['evs'] - results['HVA']['e_noisy']:+.3f} = {(h['evs'] - results['HVA']['e_noisy']) / sd:+.1f}σ)")
+assert abs(h["evs"] - (-4.3224)) < 5e-5 and abs(sd - 0.0390) < 5e-5, "5절 표: HVA 실측과 표준오차"

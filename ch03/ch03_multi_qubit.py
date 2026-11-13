@@ -4,6 +4,7 @@
 규약: 이 파일은 N&C 교과서 순서(빅 엔디안: 왼쪽 큐비트 = 상위 비트)를 쓴다.
       Qiskit 순서(리틀 엔디안)로 바꾸는 함수 to_qiskit_order() 를 끝에 둔다.
 """
+import os
 import numpy as np
 from itertools import product
 
@@ -39,6 +40,12 @@ print("   CZ 는 대칭(제어·표적 교환 불변):", np.allclose(CZ, SWAP @ 
 print("   CNOT 은 비대칭:", np.allclose(CNOT, SWAP @ CNOT @ SWAP))
 print("   SWAP = CNOT01·CNOT10·CNOT01 :", np.allclose(SWAP, CNOT @ (SWAP@CNOT@SWAP) @ CNOT))
 print("   (H⊗H) CNOT (H⊗H) = CNOT 뒤집힘 :", np.allclose(kron(H,H) @ CNOT @ kron(H,H), SWAP@CNOT@SWAP))
+assert np.allclose(CNOT, CNOT_built), "5절 게이트 항등식: CNOT = |0><0|⊗I + |1><1|⊗X"
+assert np.allclose(CZ, kron(I,H) @ CNOT @ kron(I,H)), "5절 게이트 항등식: CZ = (I⊗H)CNOT(I⊗H)"
+assert np.allclose(CZ, SWAP @ CZ @ SWAP), "5절 게이트 항등식: CZ 는 대칭"
+assert not np.allclose(CNOT, SWAP @ CNOT @ SWAP), "5절 게이트 항등식: CNOT 은 비대칭(False)"
+assert np.allclose(SWAP, CNOT @ (SWAP@CNOT@SWAP) @ CNOT), "5절 게이트 항등식: SWAP = CNOT01·CNOT10·CNOT01"
+assert np.allclose(kron(H,H) @ CNOT @ kron(H,H), SWAP@CNOT@SWAP), "5절 게이트 항등식: (H⊗H)CNOT(H⊗H) = 뒤집힌 CNOT"
 
 # ── 2. Bell 상태 ─────────────────────────────────────────────────
 phi_plus = CNOT @ kron(H, I) @ ket('00')
@@ -53,12 +60,17 @@ def sample(psi, shots):
     return {k: labels.count(k) for k in sorted(set(labels))}
 c = sample(phi_plus, 1024)
 print("   1024샷:", c, "-> 두 비트가 항상 같다")
+assert np.allclose(phi_plus, [0.7071, 0, 0, 0.7071], atol=5e-5), "5절 Bell 상태: 진폭 (0.7071, 0, 0, 0.7071)"
+assert np.allclose(probs(phi_plus), [0.5, 0, 0, 0.5]), "5절 Bell 상태: 확률 (0.5, 0, 0, 0.5)"
+assert c == {"00": 517, "11": 507}, "5절 Bell 상태: 1024샷 = 00이 517회, 11이 507회, 01·10은 0회"
 
 # 분리 가능성 검사: 2큐비트 순수 상태가 곱상태인지 (진폭 행렬의 랭크)
 def is_product(psi):
     M = psi.reshape(2, 2)
     return np.linalg.matrix_rank(M, tol=1e-9) == 1
 print("   |Φ+> 곱상태?", is_product(phi_plus), " |+>|0> 곱상태?", is_product(kron(H,I)@ket('00')))
+assert np.linalg.matrix_rank(phi_plus.reshape(2, 2), tol=1e-9) == 2, "5절 Bell 상태: 진폭 행렬의 랭크 2(얽힘)"
+assert is_product(kron(H,I)@ket('00')), "5절 Bell 상태: |+>|0> 는 랭크 1(곱상태)"
 
 # ── 3. 부분 추적과 순수도 ────────────────────────────────────────
 def partial_trace_B(rho):   # 2큐비트 밀도행렬에서 B를 추적 → A의 밀도행렬
@@ -73,12 +85,20 @@ print("   곱상태 |+>|0> 의 ρ_A 순수도 =", np.trace(partial_trace_B(rho_p
 # 얽힘 엔트로피
 ev = np.linalg.eigvalsh(rhoA); ev = ev[ev > 1e-12]
 print("   얽힘 엔트로피 S(ρ_A) =", float(-(ev*np.log2(ev)).sum()), "bit")
+assert np.allclose(rhoA, np.diag([0.5, 0.5])), "5절 부분 추적 표: |Φ+> 의 ρ_A = diag(0.5, 0.5)"
+assert abs(np.trace(rhoA@rhoA).real - 0.5000) < 5e-5, "5절 부분 추적 표: |Φ+> 의 순수도 0.5000"
+assert abs(float(-(ev*np.log2(ev)).sum()) - 1.000) < 5e-4, "5절 부분 추적 표: |Φ+> 의 S(ρ_A) = 1.000 bit"
+assert np.allclose(partial_trace_B(rho_prod), np.outer(H @ ket0, (H @ ket0).conj())), "5절 부분 추적 표: |+>|0> 의 ρ_A = |+><+|"
+assert abs(np.trace(partial_trace_B(rho_prod)@partial_trace_B(rho_prod)).real - 1.0000) < 5e-5, "5절 부분 추적 표: |+>|0> 의 순수도 1.0000"
 
 # ── 4. GHZ (3큐비트) ─────────────────────────────────────────────
 CNOT01 = kron(CNOT, I)                       # control q0, target q1
 CNOT12 = kron(I, CNOT)                       # control q1, target q2
 ghz = CNOT12 @ CNOT01 @ kron(H, I, I) @ ket('000')
-print("4) GHZ =", ghz, " 1024샷:", sample(ghz, 1024))
+c_ghz = sample(ghz, 1024)
+print("4) GHZ =", ghz, " 1024샷:", c_ghz)
+assert np.allclose(ghz, [0.7071, 0, 0, 0, 0, 0, 0, 0.7071], atol=5e-5), "5절 GHZ: 진폭은 |000>, |111> 에만 0.7071"
+assert c_ghz == {"000": 520, "111": 504}, "5절 GHZ: 1024샷 = 000이 520회, 111이 504회"
 
 # ── 5. CHSH: 얽힘은 고전 상관으로 흉내낼 수 없다 ─────────────────
 def expect(psi, op): return np.vdot(psi, op @ psi).real
@@ -92,12 +112,18 @@ rho_cl = 0.5*np.outer(ket('00'),ket('00')) + 0.5*np.outer(ket('11'),ket('11'))
 Ecl = lambda t1, t2: np.trace(rho_cl @ kron(obs(t1), obs(t2))).real
 S_cl = Ecl(a,b) + Ecl(a,b2) + Ecl(a2,b) - Ecl(a2,b2)
 print(f"   같은 각도에서 고전 혼합 상태의 S = {S_cl:.4f}  (≤ 2)")
+assert abs(S - 2.8284) < 5e-5 and abs(S - 2*np.sqrt(2)) < 1e-9, "5절 CHSH 표: Bell 의 S = 2.8284 = 2√2"
+assert np.allclose([E(a,b), E(a,b2), E(a2,b), E(a2,b2)], [0.7071, 0.7071, 0.7071, -0.7071], atol=5e-5), "5절 CHSH 표: Bell 열의 네 항"
+assert np.allclose([Ecl(a,b), Ecl(a,b2), Ecl(a2,b), Ecl(a2,b2)], [0.7071, 0.7071, 0, 0], atol=5e-5), "5절 CHSH 표: 고전 혼합 열의 네 항"
+assert abs(S_cl - 1.4142) < 5e-5 and S_cl <= 2, "5절 CHSH 표: 고전 혼합의 S = 1.4142"
 
 # ── 6. 고전 상관(혼합 상태)과의 비교: 같은 Z-상관, 다른 X-상관 ───
 rho_cl = 0.5*np.outer(ket('00'),ket('00')) + 0.5*np.outer(ket('11'),ket('11'))
 def expect_rho(rho, op): return np.trace(rho@op).real
 print("6) ZZ 상관: Bell", expect(phi_plus, kron(Z,Z)), " 고전혼합", expect_rho(rho_cl, kron(Z,Z)))
 print("   XX 상관: Bell", expect(phi_plus, kron(X,X)), " 고전혼합", expect_rho(rho_cl, kron(X,X)))
+assert abs(expect(phi_plus, kron(Z,Z)) - 1.0) < 1e-9 and abs(expect_rho(rho_cl, kron(Z,Z)) - 1.0) < 1e-9, "5절·7절: ZZ 상관은 Bell·고전 혼합 둘 다 1.0"
+assert abs(expect(phi_plus, kron(X,X)) - 1.0) < 1e-9 and abs(expect_rho(rho_cl, kron(X,X))) < 1e-9, "5절·7절: XX 상관은 Bell 1.0, 고전 혼합 0"
 
 # ── 7. 큐비트 순서: Qiskit(리틀 엔디안)으로 변환 ──────────────────
 def to_qiskit_order(psi):
@@ -106,6 +132,8 @@ def to_qiskit_order(psi):
 psi = kron(H, I) @ ket('00')               # 빅엔디안: q0=|+>, q1=|0> → 진폭 [.707, 0, .707, 0]
 print("7) |+>|0> 빅엔디안 진폭:", psi)
 print("   같은 상태를 Qiskit 순서로:", to_qiskit_order(psi), " (Statevector 출력이 이렇게 나온다)")
+assert np.allclose(psi, [0.707, 0, 0.707, 0], atol=5e-4), "5절 큐비트 순서: |+>|0> 빅 엔디안 진폭 (0.707, 0, 0.707, 0)"
+assert np.allclose(to_qiskit_order(psi), [0.707, 0.707, 0, 0], atol=5e-4), "5절 큐비트 순서: Qiskit 순서 (0.707, 0.707, 0, 0)"
 print("   Qiskit에서 '01' 은 q1=0, q0=1 을 뜻한다 (오른쪽 끝이 큐비트 0)")
 
 # ── 8. 그림 ──────────────────────────────────────────────────────
@@ -121,7 +149,7 @@ ax2.plot(thetas, [expect(phi_plus, kron(obs(np.pi/2), obs(t))) for t in thetas],
 ax2.plot(thetas, [expect_rho(rho_cl, kron(obs(np.pi/2), obs(t))) for t in thetas], color="#868E96", ls="--", label="고전 혼합")
 ax2.set_xticks([0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi]); ax2.set_xticklabels(["0","π/4","π/2","3π/4","π"])
 ax2.set_xlabel("B의 측정 각 θ (A는 X축)"); ax2.set_ylabel("상관 E(π/2, θ)"); ax2.set_title("상관의 각도 의존성"); ax2.legend(frameon=False, fontsize=9)
-plt.tight_layout(); plt.savefig("ch03_results.png", dpi=150); print("8) saved ch03_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch03_results.png"), dpi=150); print("8) saved ch03_results.png")
 
 # ── 연습문제 검산 (8절) ──────────────────────────────────────────
 # 8절 해답이 인용하는 수치·행렬을 전부 다시 계산한다. 위쪽 코드·난수(rng)·그림은 건드리지 않는다.
@@ -133,6 +161,9 @@ ex_phi_m = kron(Z, I) @ phi_plus; ex_psi_p = kron(X, I) @ phi_plus; ex_psi_m = k
 print("[연습 1] |Φ-> = (Z⊗I)|Φ+> = (|00>-|11>)/√2 :", np.allclose(ex_phi_m, (ket('00') - ket('11')) * ex_r2))
 print("[연습 1] |Ψ+> = (X⊗I)|Φ+> = (|01>+|10>)/√2 :", np.allclose(ex_psi_p, (ket('01') + ket('10')) * ex_r2))
 print("[연습 1] |Ψ-> = (ZX⊗I)|Φ+> = (|01>-|10>)/√2 :", np.allclose(ex_psi_m, (ket('01') - ket('10')) * ex_r2))
+assert np.allclose(ex_phi_m, (ket('00') - ket('11')) * ex_r2), "8절 문제 1: |Φ-> = (Z⊗I)|Φ+>"
+assert np.allclose(ex_psi_p, (ket('01') + ket('10')) * ex_r2), "8절 문제 1: |Ψ+> = (X⊗I)|Φ+>"
+assert np.allclose(ex_psi_m, (ket('01') - ket('10')) * ex_r2), "8절 문제 1: |Ψ-> = (ZX⊗I)|Φ+>"
 ex_named = {'Φ+': phi_plus, 'Φ-': ex_phi_m, 'Ψ+': ex_psi_p, 'Ψ-': ex_psi_m}
 ex_map = {}
 for ex_ab in ('00', '01', '10', '11'):
@@ -143,6 +174,9 @@ ex_B = np.column_stack([CNOT @ kron(H, I) @ ket(ex_ab) for ex_ab in ('00', '01',
 print("[연습 1] np.allclose(B.conj().T @ B, np.eye(4)) =", np.allclose(ex_B.conj().T @ ex_B, np.eye(4)))
 print("[연습 1] Bell 측정: (H⊗I)·CNOT 이 네 Bell 상태를 |00>,|01>,|10>,|11> 로 되돌린다:",
       np.allclose(kron(H, I) @ CNOT @ ex_B, np.eye(4)))
+assert ex_map == {'00': ['Φ+'], '01': ['Ψ+'], '10': ['Φ-'], '11': ['Ψ-']}, "8절 문제 1: CNOT(H⊗I)|ab> 가 네 Bell 상태를 고른다"
+assert np.allclose(ex_B.conj().T @ ex_B, np.eye(4)), "8절 문제 1: 네 Bell 상태는 정규직교(B†B = I)"
+assert np.allclose(kron(H, I) @ CNOT @ ex_B, np.eye(4)), "8절 문제 1: Bell 측정 = 생성 회로를 거꾸로"
 
 # 문제 2: cosθ|00> + sinθ|11> 의 얽힘 엔트로피 = H₂(cos²θ)
 def ex_state(theta): return np.cos(theta) * ket('00') + np.sin(theta) * ket('11')
@@ -165,6 +199,14 @@ ex_Ss = [ex_entropy(ex_state(t))[0] for t in ex_grid]
 print(f"[연습 2] 0 ≤ θ ≤ π/2 격자(181점)에서 S 최대: θ = {ex_grid[int(np.argmax(ex_Ss))]/np.pi:.4f} π, S = {max(ex_Ss):.4f} bit")
 print("[연습 2] CNOT·(Ry(2θ)⊗I)|00> = cosθ|00> + sinθ|11>  (θ = π/8, 0.3, 1.1):",
       all(np.allclose(CNOT @ kron(Ry(2*t), I) @ ket('00'), ex_state(t)) for t in (np.pi/8, 0.3, 1.1)))
+assert np.allclose(ex_rA, np.diag([np.cos(ex_t)**2, np.sin(ex_t)**2])), "8절 문제 2: ρ_A = diag(cos²θ, sin²θ)"
+assert abs(np.cos(ex_t)**2 - 0.8536) < 5e-5, "8절 문제 2: cos²(π/8) = 0.8536"
+assert abs(ex_S - 0.601) < 5e-4 and abs(ex_S - ex_H2(np.cos(ex_t)**2)) < 1e-9, "8절 문제 2: S = H₂(0.8536) ≈ 0.601 bit"
+assert abs(ex_entropy(ex_state(np.pi/4))[0] - 1) < 1e-9 and np.allclose(ex_state(np.pi/4), phi_plus), "8절 문제 2: θ = π/4 에서 최대 1 bit, |Φ+>"
+assert abs(ex_entropy(ex_state(0))[0]) < 1e-9 and abs(ex_entropy(ex_state(np.pi/2))[0]) < 1e-9, "8절 문제 2: θ = 0, π/2 에서 S = 0"
+assert is_product(ex_state(0)) and is_product(ex_state(np.pi/2)), "8절 문제 2: θ = 0, π/2 는 곱상태"
+assert abs(ex_grid[int(np.argmax(ex_Ss))] - np.pi/4) < 1e-9, "8절 문제 2: 격자에서 S 최대는 θ = π/4"
+assert all(np.allclose(CNOT @ kron(Ry(2*t), I) @ ket('00'), ex_state(t)) for t in (np.pi/8, 0.3, 1.1)), "8절 문제 2: Ry(2θ) 뒤 CNOT 으로 만든다"
 
 # 문제 3: CNOT|+>|-> = |->|->  (위상 되돌림)
 plus = H @ ket0; minus = H @ ket1
@@ -175,3 +217,6 @@ print("[연습 3] CNOT @ kron(plus, minus) = kron(minus, minus) :", np.allclose(
 print(f"[연습 3] 입력 |+>|-> 와 출력의 겹침 |<+-|출력>|² = {abs(np.vdot(np.kron(plus, minus), ex_out))**2:.4f}"
       " → 제어 큐비트가 |+> 에서 |-> 로 바뀌었다(표적 |-> 는 그대로)")
 print("[연습 3] (H⊗H) CNOT (H⊗H) = 뒤집힌 CNOT :", np.allclose(kron(H, H) @ CNOT @ kron(H, H), SWAP @ CNOT @ SWAP))
+assert np.allclose(X @ minus, -minus), "8절 문제 3: X|-> = -|->"
+assert np.allclose(ex_out, np.kron(minus, minus)), "8절 문제 3: CNOT|+>|-> = |->|->"
+assert abs(np.vdot(np.kron(plus, minus), ex_out))**2 < 1e-12, "8절 문제 3: 출력은 입력과 직교(제어 큐비트가 바뀌었다)"

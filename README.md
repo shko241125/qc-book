@@ -18,7 +18,7 @@ python env/smoke_test.py          # 표에 "통과"가 줄줄이 나오면 끝
 
 ```bash
 bash env/test_all.sh                                   # 모든 장·부록의 numpy 스크립트(SDK 불필요, 10~15분). SDK 스크립트까지는 --sdk
-python env/extract_snippets.py && python env/run_snippets.py     # 본문의 SDK 스니펫 37개 → runs/snippets-날짜.md
+python env/extract_snippets.py && python env/run_snippets.py     # 본문의 SDK 스니펫 39개 → runs/snippets-날짜.md
 ```
 
 ## 실제 장치에서 돌리기 (IBM Quantum, 무료 Open 플랜)
@@ -36,7 +36,7 @@ python env/run_ibm.py --circuit bell --yes   # 제출. 결과는 runs/ 에 JSON 
 
 AWS Braket 은 `bash env/setup.sh --hardware` 뒤 `python env/run_braket.py --local` 부터. QPU 는 유료다(작업당 $0.30 + 샷당 요금).
 
-IBM 경로(`run_ibm.py`, `ch14_submit.py`)는 2026-11-11 qiskit-ibm-runtime 0.52.0 으로 실기까지 실행했다. Braket 경로는 아직 실행하지 않았다.
+IBM 경로(`run_ibm.py`, `ch14_submit.py`)는 2026-11-11 qiskit-ibm-runtime 0.52.0 으로 실기까지 실행했다. 그 뒤 `ch14_submit.py` 의 기록 순서와 `fetch_ibm_job.py` 의 추가 항목을 고쳤고(검토 R11), 이 변경분은 아직 돌리지 않았다 — `ch14_submit.py fake` 로 먼저 확인한다. Braket 경로는 아직 실행하지 않았다.
 
 ## 다른 곳에서 열기
 

@@ -2,6 +2,7 @@
 실행: python ch04_universality.py
 환경: Python 3.13, numpy 2.5 (SDK 없이 동작). 큐비트 순서: 빅 엔디안(3장 규약).
 """
+import os
 import numpy as np
 from itertools import product
 
@@ -40,7 +41,10 @@ U0 = H @ T @ H @ T          # 범용성의 핵심 원소. 회전축·각 계산
 # U = e^{iα} exp(-iθ n·σ/2) 에서 cos(θ/2) = |Tr U|/2
 theta = 2*np.arccos(abs(np.trace(U0))/2)
 print(f"1) HTHT 회전각 θ = {theta:.6f} rad = {theta/np.pi:.6f} π  (π의 무리수 배 → 거듭제곱이 구를 조밀하게 덮는다)")
-print("   cos(θ/2) = cos²(π/8) =", round(np.cos(np.pi/8)**2, 6), " 실측:", round(abs(np.trace(U0))/2, 6))
+print("   cos(θ/2) = cos²(π/8) =", round(np.cos(np.pi/8)**2, 6), " 계산값:", round(abs(np.trace(U0))/2, 6))
+assert abs(theta - 1.096057) < 5e-7 and abs(theta/np.pi - 0.348886) < 5e-7, "5절: HTHT 회전각 θ = 1.096057 rad = 0.348886π"
+assert abs(abs(np.trace(U0))/2 - 0.853553) < 5e-7 and abs(abs(np.trace(U0))/2 - np.cos(np.pi/8)**2) < 1e-12, "5절: cos(θ/2) = 0.853553 = cos²(π/8)"
+assert abs((2 + np.sqrt(2))/4 - 0.8536) < 5e-5 and abs(theta/np.pi - 0.3489) < 5e-5, "3절: (2+√2)/4 ≈ 0.8536, θ ≈ 0.3489π"
 
 # ── 2. {H, T} 단어 집합으로 임의 게이트 근사: 길이 vs 최소 오차 ─────
 target = Rx(1.0) @ Ry(0.7)   # 임의의 목표 게이트
@@ -48,6 +52,7 @@ gates = {'H': H, 'T': T}
 print("2) 목표 U = Rx(1.0)Ry(0.7) 를 {H,T} 단어로 근사 (전수 탐색)")
 print("   길이≤L | 단어 수(길이 L) | 최소 거리(1-|Tr|/2) | 최소 회전각 오차(rad)")
 best_word_overall = None
+ang_by_L = {}                               # 회귀 검사용 기록
 cum = (np.inf, None, None)
 for L in range(1, 15):
     best = (np.inf, None)
@@ -62,7 +67,13 @@ for L in range(1, 15):
     ang = su2_angle(cum[2], target)
     print(f"   {L:4d} | {2**L:7d} | {cum[0]:.6f} | {ang:.4f}")
     best_word_overall = cum
+    ang_by_L[L] = ang
 print("   최선의 단어:", best_word_overall[1])
+for L_md, ang_md in [(1, 1.2028), (3, 0.7309), (4, 0.5302), (8, 0.5302), (9, 0.2309), (12, 0.2306), (14, 0.2306)]:
+    assert abs(ang_by_L[L_md] - ang_md) < 5e-5, "5절 {H,T} 전수 탐색 표: 최소 회전각 오차"
+assert abs(ang_by_L[14] - 0.23) < 5e-3, "1절 요약: 길이 14 에서 오차 0.23 rad"
+assert ang_by_L[4] == ang_by_L[8] and ang_by_L[12] == ang_by_L[14], "5절: 길이 4~8, 12~14 에서 오차가 그대로"
+assert best_word_overall[1] == "HTTHTHTTHTHT" and len(best_word_overall[1]) == 12, "5절: 최선의 단어 HTTHTHTTHTHT(길이 12)"
 print("   → 길이가 늘수록 오차가 줄지만 느리다. Solovay–Kitaev 는 이것을 O(log^c(1/ε)) 로 만든다.")
 
 # ── 3. Toffoli 분해: 6 CNOT + 단일 큐비트 게이트 (N&C Fig. 4.9와 동치인 S 없는 15게이트 판) ────
@@ -84,6 +95,8 @@ M = np.eye(8, dtype=complex)
 for g in seq: M = g @ M         # 시간 순서대로 왼쪽에 곱한다
 print("3) Toffoli = 6 CNOT + 7 T/T† + 2 H (N&C Fig.4.9와 동치인 15게이트 판, Qiskit ccx 정의):", np.allclose(M, CCX))
 print("   CNOT 6개, T/T† 7개, H 2개 — N&C 그림 4.9(S 하나를 더 쓴 16게이트)에서 S를 T 배치로 흡수한 판")
+assert np.allclose(M, CCX), "5절 Toffoli 분해: 15게이트 곱 = CCX"
+assert len(seq) == 15, "5절 Toffoli 분해: 게이트 15개"
 
 # ── 4. 임의 단일 큐비트 게이트 → IBM 기저 {rz, sx, x} ──────────────
 def zyz(Uin):
@@ -102,6 +115,7 @@ b, g, d = zyz(U)
 # 표준 결과: U ≅ Rz(β+π) · SX · Rz(γ+π) · SX · Rz(δ)  (Qiskit 'ZSXZSXZ' 분해)
 M_isa = Rz(b + np.pi) @ SX @ Rz(g + np.pi) @ SX @ Rz(d)
 print(f"4) ZSXZSXZ 분해: U ≅ Rz({b+np.pi:.3f})·SX·Rz({g+np.pi:.3f})·SX·Rz({d:.3f})  거리 = {dist(M_isa, U):.2e}")
+assert abs(dist(M_isa, U)) < 1e-12, "5절 ZSXZSXZ 분해: 재구성 거리 0.00 (1e-16 수준)"
 print("   → 임의 단일 큐비트 게이트 = SX 2개 + Rz 3개. Rz 는 가상 게이트(2장)이므로 실제 비용은 SX 2개.")
 
 # ── 5. 연결성 제약: 선형 사슬에서 CNOT(0,2) 는 SWAP 이 필요 ─────────
@@ -109,6 +123,7 @@ CX02 = cnot(0,2)
 SWAP12 = cnot(1,2) @ cnot(2,1) @ cnot(1,2)
 routed = SWAP12 @ cnot(0,1) @ SWAP12          # SWAP(1,2) · CX(0,1) · SWAP(1,2)
 print("5) CX(0,2) = SWAP(1,2)·CX(0,1)·SWAP(1,2):", np.allclose(routed, CX02), "→ CNOT 1개가 7개가 된다")
+assert np.allclose(routed, CX02), "5절 연결성 라우팅: CX(0,2) = SWAP(1,2)·CX(0,1)·SWAP(1,2) (CNOT 7개)"
 
 # ── 6. 그림: 근사 오차 vs 단어 길이 ─────────────────────────────
 import matplotlib; matplotlib.use("Agg")
@@ -126,7 +141,8 @@ for L in range(1, 15):
 fig, ax = plt.subplots(figsize=(6, 3.4))
 ax.semilogy(Ls, errs, 'o-', color="#4C6EF5")
 ax.set_xlabel("{H,T} 단어 길이 ≤ L"); ax.set_ylabel("최소 회전각 오차 (rad)"); ax.set_title("전수 탐색: 길이가 늘면 오차는 줄지만 느리게")
-plt.tight_layout(); plt.savefig("ch04_results.png", dpi=150); print("6) saved ch04_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch04_results.png"), dpi=150); print("6) saved ch04_results.png")
+assert np.allclose(errs, [ang_by_L[L] for L in Ls]), "5절 그림: 곡선의 점이 표의 최소 회전각 오차와 같다"
 
 # ── 연습문제 검산 (8절) ──────────────────────────────────────────
 # 8절 해답이 인용하는 수치·행렬을 전부 다시 계산한다. 위쪽 코드·난수(rng)·그림은 건드리지 않는다.
@@ -153,6 +169,8 @@ ex_cl, ex_depth, ex_closed = ex_bfs([H, S])
 print(f"[연습 1] {{H, S}} 너비 우선 탐색: 서로 다른 게이트(전역 위상 무시) = {len(ex_cl)}개, 닫힘 = {ex_closed} (단어 길이 {ex_depth} 까지에서 다 나오고 그 뒤로 새 원소 없음)")
 ex_ht, ex_depth_ht, ex_closed_ht = ex_bfs([H, T], cap=5000)
 print(f"[연습 1] {{H, T}} 같은 탐색: 단어 길이 {ex_depth_ht} 까지에서 이미 {len(ex_ht)}개 (상한 5000 초과), 닫힘 = {ex_closed_ht} → 끝나지 않는다")
+assert len(ex_cl) == 24 and ex_closed, "8절 문제 1: {H, S} 는 전역 위상 무시 24개에서 닫힌다"
+assert len(ex_ht) > 5000 and not ex_closed_ht, "8절 문제 1: {H, T} 는 같은 탐색이 끝나지 않는다"
 def ex_so3(Uin):
     """단일 큐비트 게이트가 Bloch 구에 일으키는 3×3 회전행렬 R_ij = Tr(σ_i U σ_j U†)/2"""
     return np.array([[np.trace(a @ Uin @ b @ Uin.conj().T).real / 2 for b in (X, Y, Z)] for a in (X, Y, Z)])
@@ -162,6 +180,7 @@ ex_signed_perm = all(np.allclose(np.sort(abs(R), axis=1), [[0, 0, 1]]*3) and np.
 ex_distinct = len({tuple((np.round(R).astype(int)).flatten().tolist()) for R in ex_rots})
 print(f"[연습 1] 24개 각각의 Bloch 회전이 좌표축을 좌표축으로 보내는 고유 회전(det=+1)? {ex_signed_perm},  서로 다른 회전 = {ex_distinct}개"
       " = 정육면체 회전군의 크기 24")
+assert ex_signed_perm and ex_distinct == 24, "8절 문제 1: 24개 = 정육면체 회전 대칭과 같은 크기"
 
 # 문제 2: CNOT = (I⊗H)·CZ·(I⊗H), Toffoli 의 2큐비트 게이트 수는 그대로 6
 CNOT = cnot(0, 1, n=2); CZ = np.diag([1, 1, 1, -1]).astype(complex)   # 2큐비트 행렬(3장 규약: 제어 q0, 표적 q1)
@@ -184,6 +203,12 @@ print(f"[연습 2] Toffoli 의 CNOT 을 전부 H·CZ·H 로 바꾼 회로 = Toff
 print("[연습 2] 연속된 CNOT 쌍: CX(0,2)·CX(1,2) = H(2)·CZ(0,2)·CZ(1,2)·H(2) (가운데 H·H = I 상쇄):",
       np.allclose(cnot(0, 2) @ cnot(1, 2), single(H, 2) @ ex_cz(0, 2) @ ex_cz(1, 2) @ single(H, 2)))
 print(f"[연습 2] H 는 √X·Rz 로 녹는다: dist(Rz(π/2)·SX·Rz(π/2), H) = {abs(dist(Rz(np.pi/2) @ SX @ Rz(np.pi/2), H)):.1e}")
+assert np.allclose(kron(I, H) @ CZ @ kron(I, H), CNOT), "8절 문제 2: CNOT = (I⊗H)·CZ·(I⊗H)"
+assert np.allclose(ex_M_cz, CCX) and np.allclose(ex_M_cx, CCX) and ex_n_cz == 6, "8절 문제 2: CZ 판 Toffoli 도 2큐비트 게이트 6개"
+assert [op[0] for op in ex_circ].count('cx') == 6 and sum(op[0] in ('t', 'tdg') for op in ex_circ) == 7 \
+    and [op[0] for op in ex_circ].count('h') == 2, "5절 Toffoli 분해: CNOT 6, T·T† 7, H 2"
+assert np.allclose(cnot(0, 2) @ cnot(1, 2), single(H, 2) @ ex_cz(0, 2) @ ex_cz(1, 2) @ single(H, 2)), "8절 문제 2: 연속된 CNOT 쌍에서 H·H 상쇄"
+assert abs(dist(Rz(np.pi/2) @ SX @ Rz(np.pi/2), H)) < 1e-12, "8절 문제 2: H 는 √X·Rz 로 녹는다"
 
 # 문제 3: 제어-Rz(t) = (I⊗A)·CNOT·(I⊗B)·CNOT,  A = Rz(t/2), B = Rz(-t/2), C = I
 ex_t = 0.9
@@ -203,3 +228,8 @@ ex_lam = 0.9
 ex_CP = np.diag([1, 1, 1, np.exp(1j*ex_lam)])
 ex_CRz_lam = np.diag([1, 1, np.exp(-1j*ex_lam/2), np.exp(1j*ex_lam/2)])
 print("[연습 3] CP(λ) = CRz(λ)·(P(λ/2)⊗I)  (λ = 0.9):", np.allclose(ex_CP, ex_CRz_lam @ kron(np.diag([1, np.exp(1j*ex_lam/2)]), I)))
+assert np.allclose(ex_A @ ex_B @ ex_C, I) and np.allclose(X @ ex_B @ X, ex_A) and np.allclose(ex_A @ X @ ex_B @ X, Rz(ex_t)), "8절 문제 3: ABC = I, A X B X = Rz(t)"
+assert np.allclose(kron(I, ex_A) @ CNOT @ kron(I, ex_B) @ CNOT, ex_CRz), "8절 문제 3: (I⊗A)·CNOT·(I⊗B)·CNOT = diag(1, 1, e^{-it/2}, e^{it/2}) (t = 0.9)"
+assert np.allclose(ex_CRz, kron(np.diag([1, 0]), I) + kron(np.diag([0, 1]), Rz(ex_t))), "8절 문제 3: 그 행렬이 제어-Rz(t)"
+assert np.allclose(CNOT @ kron(I, Rz(2*ex_th)) @ CNOT, ex_expZZ), "8절 문제 3: CNOT·(I⊗Rz(2θ))·CNOT = exp(-iθ Z⊗Z)"
+assert np.allclose(ex_CP, ex_CRz_lam @ kron(np.diag([1, np.exp(1j*ex_lam/2)]), I)), "8절 문제 3: CP(λ) = CRz(λ)·(P(λ/2)⊗I)"

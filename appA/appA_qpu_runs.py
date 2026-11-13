@@ -27,11 +27,15 @@ bell = load("runs/20261111-062150Z_ibm_kingston_bell2.json")
 real, fake = load("runs/20261111-063819Z_ibm_fez_ch14_record.json"), load("runs/20261111-063700Z_fake_marrakesh_ch14_record.json")
 isa = load("runs/20261111-063819Z_ibm_fez_ch14_isa_calib.json")
 SJ, EJ = real["jobs"]["ghz5"]["job_id"], real["jobs"]["hva"]["job_id"]
+assert "bit_order" not in real and "bit_order" not in fake, "이 스크립트는 2026-11-11 기록(GHZ 만 Qiskit 순서)을 전제로 GHZ 를 뒤집는다"
+assert real["backend"] == isa[SJ]["backend"] == isa[EJ]["backend"] and isa[EJ]["estimator"]["evs"] == real["jobs"]["hva"]["evs"]
 NAMES = ["ghz5", "bv1011", "grover101", "qpe_t"]
 
 # 14장 예측(ch14_hardware.py 출력 2) — 공개 중앙값 모형) — 비교 기준으로만 인용한다
-PRED = {"ghz5": 0.918, "bv1011": 0.925, "grover101": 0.759, "qpe_t": 0.881}
-PRED_HVA, PRED_HVA_NORO, E_HVA_IDEAL = -4.4329, -4.5551, -4.6462
+_pred = load("ch14/ch14_pred.json")                      # ch14_hardware.py 가 남긴 예측값(반올림하지 않은 값)
+PRED = _pred["success"]
+PRED_HVA, PRED_HVA_NORO, E_HVA_IDEAL = _pred["hva"]["noisy"], _pred["hva"]["noisy_no_readout"], _pred["hva"]["ideal"]
+assert [round(PRED[k], 3) for k in NAMES] == [0.918, 0.925, 0.759, 0.881] and round(PRED_HVA, 4) == -4.4329, "14장 예측이 바뀌었다 — 본문 대조 필요"
 th = np.arcsin(1 / np.sqrt(8)); P_GROVER = np.sin(5 * th) ** 2
 IDEAL = {"ghz5": {"00000": .5, "11111": .5}, "bv1011": {"1011": 1.0}, "qpe_t": {"001": 1.0},
          "grover101": {**{format(i, "03b"): (1 - P_GROVER) / 7 for i in range(8)}, "101": P_GROVER}}
@@ -69,7 +73,7 @@ for k in NAMES:
     bad = [(b if k != "ghz5" else b[::-1], v) for b, v in top if b not in GOOD[k]][:3]
     print(f"    {k:10s} 오답 상위(책 순서): {bad}")
 ev, sd = isa[EJ]["estimator"]["evs"], isa[EJ]["estimator"]["stds"]
-print(f"    HVA ⟨H⟩ 실측 {ev:.4f} ± {sd:.4f} | 예측 {PRED_HVA} (판독 제외 {PRED_HVA_NORO}) | 차 {ev - PRED_HVA:+.3f} = {(ev - PRED_HVA) / sd:+.1f}σ "
+print(f"    HVA ⟨H⟩ 실측 {ev:.4f} ± {sd:.4f} | 예측 {PRED_HVA:.4f} (판독 제외 {PRED_HVA_NORO:.4f}) | 차 {ev - PRED_HVA:+.3f} = {(ev - PRED_HVA) / sd:+.1f}σ "
       f"| fake {fake['jobs']['hva']['evs']:.4f} (Aer: 판독 오류 없는 정확값 + N(0, 0.02) 표본 잡음)")
 print(f"    QPU 사용: Bell {bell['usage_seconds']}초 + sampler·estimator {real['qpu_seconds']}초 = {bell['usage_seconds'] + sum(real['qpu_seconds'])}초 "
       f"(Open 플랜 600초의 {100 * (bell['usage_seconds'] + sum(real['qpu_seconds'])) / 600:.1f}%)")
@@ -86,9 +90,9 @@ H1 = np.array([[1, 1], [1, -1]], complex) / np.sqrt(2)
 
 class Replay:
     """ISA 게이트 목록을 밀도행렬로 다시 돌린다. 로컬 순서 = 물리 큐비트 번호 오름차순."""
-    def __init__(self, qubits, cal, noisy=True, readout=True, init_exc=None):
+    def __init__(self, qubits, cal, noisy=True, readout=True, init_exc=None, gate_relax=True):
         self.q = sorted(qubits); self.loc = {p: i for i, p in enumerate(self.q)}; n = self.n = len(self.q)
-        self.cal, self.noisy, self.readout = cal, noisy, readout
+        self.cal, self.noisy, self.readout, self.gate_relax = cal, noisy, readout, gate_relax
         self.rho = np.zeros((2 ** n, 2 ** n), complex); self.rho[0, 0] = 1
         self.clock = dict.fromkeys(self.q, 0.0)
         for p, e in (init_exc or {}).items():     # 초기화 오류: 확률 e 로 |1⟩ 에서 시작
@@ -134,7 +138,8 @@ class Replay:
         self.kraus([U], phys)
         if self.noisy:
             self.depol(self.cal["gates"][f"{name}{phys}"], phys)
-            for p in phys: self.relax(dt, p)
+            if self.gate_relax:               # False: 게이트 중 T1·T2 는 RB 오류율 r 에 이미 들어 있다고 보는 변형(이중 계산 점검)
+                for p in phys: self.relax(dt, p)
         for p in phys: self.clock[p] += dt
 
     def run(self, gates, upto=None):
@@ -167,7 +172,7 @@ def replay(gates, cal, **kw):
 
 
 cal = isa[SJ]["calibration"]
-print(f"\nA3) 당일 보정값 재현 (보정 시각 {cal['last_update_date']}, 작업 {isa[SJ]['created']}) — 게이트 탈분극 + T1·T2(ASAP 유휴 포함) + 큐비트별 비대칭 판독")
+print(f"\nA3) 당일 보정값 재현 (마지막 보정 갱신 last_update_date {cal['last_update_date']}, 작업 {isa[SJ]['created']}) — 게이트 탈분극 + T1·T2(ASAP 유휴 포함) + 큐비트별 비대칭 판독")
 czs = {k: [v for kk, v in cal["gates"].items() if kk.startswith("cz")] for k in ["all"]}["all"]
 ro = [v["readout_error"] for v in cal["qubits"].values()]
 print(f"    이 작업에 쓰인 연결의 CZ 오류 {min(czs):.2e} ~ {max(czs):.2e} (14장 중앙값 3.0e-03), 큐비트 {len(ro)}개의 판독 오류 {min(ro):.4f} ~ {max(ro):.4f} (14장 평균 0.013)")
@@ -180,13 +185,16 @@ for i, k in enumerate(NAMES):
     pn, pr = replay(g, cal), replay(g, cal, readout=False)
     sn, sr = sum(pn.get(b, 0) for b in GOOD[k]), sum(pr.get(b, 0) for b in GOOD[k])
     rep[k] = pn; s, n = meas[k]["s"], meas[k]["n"]
-    print(f"    {k:10s} 이상 {s0:.4f} | 재현 {sn:.4f} (판독 제외 {sr:.4f}) | 실측 {s:.4f} | 실측−재현 {100 * (s - sn):+.1f}%p = {(s - sn) / np.sqrt(s * (1 - s) / n):+.1f}σ")
+    print(f"    {k:10s} 이상 {s0:.4f} | 재현 {sn:.4f} (판독 제외 {sr:.4f}) | 실측 {s:.4f} | 실측−재현 {100 * (s - sn):+.1f}%p = {(s - sn) / np.sqrt(s * (1 - s) / n):+.1f}σ(샷 잡음만)")
+    sg = sum(replay(g, cal, gate_relax=False).get(b, 0) for b in GOOD[k])
+    print(f"      변형(게이트 중 T1·T2 를 r 에 포함된 것으로 봄): 재현 {sg:.4f} → 실측−재현 {100 * (s - sg):+.1f}%p = {(s - sg) / np.sqrt(s * (1 - s) / n):+.1f}σ(샷 잡음만)")
 g_ghz = rep["ghz5"]; q4flip = g_ghz.get("01111", 0) + g_ghz.get("10000", 0)
 q4m = meas['ghz5']['p'].get('01111', 0) + meas['ghz5']['p'].get('10000', 0)
 print(f"    GHZ q4 하나만 뒤집힘(책 순서 11110·00001): 재현 {q4flip:.4f} | 실측 {q4m:.4f} | 초과 {100 * (q4m - q4flip):.1f}%p")
 import datetime as _dt
 _gap = _dt.datetime.fromisoformat(isa[SJ]["created"]) - _dt.datetime.fromisoformat(cal["last_update_date"])
-print(f"    보정 시각과 작업 생성 시각의 차: {_gap.seconds // 60}분 {_gap.seconds % 60}초")
+_gs = int(_gap.total_seconds())
+print(f"    마지막 보정 갱신과 작업 생성 시각의 차: {_gs // 60}분 {_gs % 60}초 (항목별 측정 시각은 기록에 없다)")
 gg = isa[SJ]["pubs"][0]; c2p = {g[3][0]: g[1][0] for g in gg if g[0] == "measure"}     # measure_all: 고전 비트 i = 논리 q_i
 p4, p3 = c2p[4], c2p[3]; cq = cal["qubits"][str(p4)]
 print(f"    GHZ 논리 q0…q4 = 물리 {[c2p[i] for i in range(5)]}; q4 = 물리 {p4}: 판독 오류 {cq['readout_error']:.4f}, T1 {cq['T1_us']:.0f} µs, T2 {cq['T2_us']:.0f} µs, "
@@ -195,6 +203,7 @@ print(f"    GHZ 논리 q0…q4 = 물리 {[c2p[i] for i in range(5)]}; q4 = 물�
 # ---------------- A4 BV '0000' ----------------
 k = "bv1011"; gb = isa[SJ]["pubs"][1]; mb = [(g[1][0], g[3][0]) for g in gb if g[0] == "measure"]
 anc = [q for q in {q for g in gb for q in g[1]} if q not in [m[0] for m in mb]]
+assert len(anc) == 1, "측정하지 않는 큐비트(보조)가 하나라고 전제한다"
 data_cz = sorted({q for g in gb if g[0] == "cz" for q in g[1]} - set(anc))
 idle = [m[0] for m in mb if not any(g[0] != "measure" and m[0] in g[1] for g in gb)]
 print(f"\nA4) BV 보조 큐비트 가설 — ISA 회로: 물리 큐비트 {sorted({q for g in gb for q in g[1]})}, 보조(측정 안 함) {anc}, "
@@ -217,17 +226,38 @@ first_cz = next(i for i, (n_, q_) in enumerate(order) if n_ == "cz" and anc[0] i
 assert hits and all(q == anc[0] and pos < first_cz and nm in "XY" and p0 > 0.999 for pos, q, nm, p0 in hits)
 print(f"    단일 파울리 결함 {3 * len(qs) * (len(order) + 1)}가지 중 '0000' 을 만드는 것 {len(hits)}가지 — 모두 보조 {anc[0]} 의 X·Y, "
       f"첫 CZ {order[first_cz][0]}{order[first_cz][1]} 이전(= 보조가 |1⟩ 에서 시작한 것과 같다), 각각 P(0000) = 1")
+ng = [g for g in gb if g[0] != "measure"]
+locs = [(-1, (q,)) for q in sorted(qs)] + [(i, tuple(g[1])) for i, g in enumerate(ng) if g[0] != "rz"]   # 초기 상태, 물리 게이트(sx·x·cz) 뒤
+n_f, hit2 = 0, []
+for pos, tq in locs:
+    for lab in itertools.product("IXYZ", repeat=len(tq)):
+        if set(lab) == {"I"}: continue
+        n_f += 1; R = Replay(qs, cal, noisy=False)
+        def inject():
+            for q_, l_ in zip(tq, lab):
+                if l_ != "I": R.kraus([{"X": X, "Y": Y, "Z": Z}[l_]], [q_])
+        if pos == -1: inject()
+        for i, g in enumerate(ng):
+            R.gate(g[0], g[1], g[2])
+            if i == pos: inject()
+        if R.dist(mb).get("0000", 0) > 0.999: hit2.append(("시작" if pos < 0 else f"{ng[pos][0]}{ng[pos][1]} 뒤", tq, "".join(lab)))
+print(f"    회로 수준 단일 결함(초기 상태 3×{len(qs)}, sx·x 뒤 3, cz 뒤 15) {n_f}가지 중 '0000' 을 만드는 것 {len(hit2)}가지: {hit2}")
 p_obs = meas[k]["p"].get("0000", 0)
+print(f"    '0000' 이 BV 전체 손실(1 − 성공)에서 차지하는 몫 {p_obs / (1 - meas[k]['s']):.0%}")
 p_rep = rep[k].get("0000", 0)
 c3 = cal["qubits"][str(anc[0])]
 print(f"    P(0000): 실측 {p_obs:.4f} | 당일 보정 재현 {p_rep:.5f} (실측의 {p_rep / p_obs:.1%})")
 es = np.linspace(0, 0.12, 241)
 f = [replay(gb, cal, init_exc={anc[0]: e}).get("0000", 0) for e in es]
+assert f[0] < p_obs < f[-1], "e 격자 밖 — np.interp 가 조용히 끝값을 준다"
 e_fit = float(np.interp(p_obs, f, es))
+_slope = float(np.gradient(f, es)[int(np.argmin(np.abs(es - e_fit)))]); _n = meas[k]["n"]
+e_err = float(np.sqrt(p_obs * (1 - p_obs) / _n) / _slope)        # '0000' 횟수의 샷 잡음만
 pr_fit = replay(gb, cal, init_exc={anc[0]: e_fit})
 s_fit = sum(pr_fit.get(b, 0) for b in GOOD[k])
 print(f"    보조 {anc[0]} 이 확률 e 로 |1⟩ 에서 시작한다고 두면 P(0000) 실측과 맞는 e = {e_fit:.4f} "
-      f"→ 그때 성공 {s_fit:.4f} (실측 {meas[k]['s']:.4f}); 비교: 보정값 P(1|0 준비) {c3['p_meas1_prep0']:.4f}, 판독 오류 {c3['readout_error']:.4f} "
+      f"± {e_err:.4f}(샷 잡음만; dP/de = {_slope:.3f}) → 그때 성공 {s_fit:.4f} (실측 {meas[k]['s']:.4f}); 비교: 보정값 P(1|0 준비) {c3['p_meas1_prep0']:.4f} "
+      f"(= {c3['p_meas1_prep0'] * 1024:.2f}/1024 → 1,024샷 추정이면 ± {np.sqrt(c3['p_meas1_prep0'] * (1 - c3['p_meas1_prep0']) / 1024):.4f}), 판독 오류 {c3['readout_error']:.4f} "
       f"(이 작업의 큐비트 {len(cal['qubits'])}개 중 판독 오류 최대: {c3['readout_error'] == max(v['readout_error'] for v in cal['qubits'].values())})")
 for b in ("1000", "1010", "0011", "1001"):
     print(f"    {b}: 실측 {meas[k]['p'].get(b, 0):.4f} | 재현(e=0) {rep[k].get(b, 0):.4f} | 재현(e 맞춤) {pr_fit.get(b, 0):.4f} | 실측−재현 {100 * (meas[k]['p'].get(b, 0) - rep[k].get(b, 0)):+.1f}%p")
@@ -267,10 +297,12 @@ def energy(c, **kw):
 
 e0, en, enr = energy(calh, noisy=False), energy(calh), energy(calh, readout=False)
 assert abs(e0 - E_HVA_IDEAL) < 1e-3, e0                                   # 재구성 회로가 13장 HVA 상태를 만든다는 검산
-cal_no3 = json.loads(json.dumps(calh)); cal_no3["qubits"]["3"].update(p_meas1_prep0=0, p_meas0_prep1=0)
+cal_no3 = json.loads(json.dumps(calh)); cal_no3["qubits"][str(anc[0])].update(p_meas1_prep0=0, p_meas0_prep1=0)
 en_no3 = energy(cal_no3)
 print(f"\nA5) HVA — 물리 사슬 {chain}, CZ 6 | 이상 {e0:.4f} | 당일 보정 재현 {en:.4f} (판독 제외 {enr:.4f}; 큐비트 3 판독만 제외 {en_no3:.4f}) "
       f"| 실측 {ev:.4f} ± {sd:.4f} → 실측−재현 {ev - en:+.3f} = {(ev - en) / sd:+.1f}σ")
+en_e = energy(calh, init_exc={anc[0]: e_fit})
+print(f"    BV 에서 맞춘 e = {e_fit:.4f} 를 큐비트 {anc[0]} 에 넣은 재현 {en_e:.4f} → 실측−재현 {ev - en_e:+.3f} = {(ev - en_e) / sd:+.1f}σ (e 없이 {(ev - en) / sd:+.1f}σ)")
 print(f"    판독 오류 몫(재현 안에서): 전체 {enr - en:+.3f} 중 큐비트 3 {en_no3 - en:+.3f}")
-print(f"    에너지 하강(|+⟩⁴ 의 −4 기준): 이상 {-4 - e0:.3f}, 재현 {-4 - en:.3f} ({(-4 - en) / (-4 - e0):.0%}), 실측 {-4 - ev:.3f} ({(-4 - ev) / (-4 - e0):.0%}), "
+print(f"    에너지 하강(|+⟩⁴ 의 −4 기준): 이상 {-4 - e0:.3f}, 재현 {-4 - en:.3f} ({(-4 - en) / (-4 - e0):.0%}), 실측 {-4 - ev:.3f} ({(-4 - ev) / (-4 - e0):.0%} ± {sd / abs(-4 - e0):.0%}), "
       f"fake {-4 - fake['jobs']['hva']['evs']:.3f} ({(-4 - fake['jobs']['hva']['evs']) / (-4 - e0):.0%})")

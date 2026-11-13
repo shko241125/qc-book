@@ -2,6 +2,7 @@
 실행: python ch06_circuit_library.py
 환경: Python 3.13, numpy 2.5 (SDK 없이 동작). 큐비트 순서: 빅 엔디안(3장 규약).
 """
+import os
 import numpy as np
 from itertools import product
 
@@ -54,6 +55,9 @@ for n in (2, 3, 4):
     ok = np.allclose(Uq, dft_matrix(2**n))
     n_cp = n*(n-1)//2
     print(f"1) QFT n={n}: 게이트 조립 = DFT 행렬? {ok}   H {n}개, 제어위상 {n_cp}개, SWAP {n//2}개")
+    assert ok, "5절 QFT = DFT: n = 2, 3, 4 에서 게이트 조립 행렬 = DFT 행렬"
+    assert len(qft_gates(n)) == n + n_cp + n//2, "5절 QFT = DFT: 게이트 수 H n + 제어 위상 n(n−1)/2 + SWAP ⌊n/2⌋"
+assert len(qft_gates(4)) == 12, "5절 QFT = DFT: n = 4 에서 4 + 6 + 2 = 12개"
 
 # QFT 는 |x> 를 '위상이 x 에 비례해 도는' 곱상태로 보낸다
 n = 3; Uq = seq(qft_gates(n))
@@ -61,6 +65,9 @@ for x in (0, 1, 5):
     psi = Uq @ ket(format(x, '03b'))
     phases = np.angle(psi) / (2*np.pi)        # 각 진폭의 위상 / 2π
     print(f"   QFT|{x}>: 진폭 크기 모두 {abs(psi[0]):.4f}, 위상/2π = {np.round(phases % 1, 3)}  (k·x/8 의 소수부)")
+    assert np.allclose(abs(psi), 0.3536, atol=5e-5), "5절 QFT 위상 표: 진폭 크기 모두 1/√8 = 0.3536"
+    ph_md = {0: [0, 0, 0, 0, 0, 0, 0, 0], 1: [0, .125, .25, .375, .5, .625, .75, .875], 5: [0, .625, .25, .875, .5, .125, .75, .375]}[x]
+    assert np.allclose(np.exp(2j*np.pi*phases), np.exp(2j*np.pi*np.array(ph_md))), "5절 QFT 위상 표: 진폭 위상/2π (x = 0, 1, 5)"
 
 # ── 2. Draper QFT 덧셈기: |a>|b> → |a>|a+b mod 2^n> ───────────────
 def draper_adder_gates(n):
@@ -95,6 +102,9 @@ for a, b in product(range(2**n), repeat=2):
 print(f"2) Draper 덧셈기 n={n}: 64가지 (a,b) 전수 검사 모두 통과? {ok_all}   게이트 {len(draper_adder_gates(n))}개, 보조 큐비트 0")
 print("   예: a=5, b=6 → 5+6 mod 8 = 3;  |101>|110> → 측정 b 레지스터 =",
       format(int(np.argmax(abs(Uadd @ ket('101110')))) & 0b111, '03b'))
+assert ok_all, "5절 Draper 덧셈기: (a, b) 64가지 전부 |a>|a+b mod 8>"
+assert len(draper_adder_gates(n)) == 18 and Uadd.shape[0] == 2**(2*n), "5절 Draper 덧셈기: 게이트 18개(6 + 6 + 6), 보조 큐비트 0"
+assert format(int(np.argmax(abs(Uadd @ ket('101110')))) & 0b111, '03b') == '011', "5절 Draper 덧셈기: |101>|110> → b 레지스터 011"
 
 # ── 3. zz_feature_map: 데이터 → 회로 → 커널 ─────────────────────
 def zz_feature_map_gates(x, reps=1):
@@ -117,6 +127,9 @@ print("   → 가까운 점은 커널이 크고 먼 점은 작다. 커널 행렬
 pts = [x, y, z, np.array([0.0, 0.0])]
 K = np.array([[kernel(p, q) for q in pts] for p in pts])
 print(np.allclose(K, K.T), (np.linalg.eigvalsh(K) > -1e-10).all())
+assert abs(kernel(x,x) - 1.0000) < 5e-5 and abs(kernel(x,y) - 0.9620) < 5e-5 and abs(kernel(x,z) - 0.7247) < 5e-5, "5절 ZZ feature map 커널 표: 1.0000, 0.9620, 0.7247"
+assert abs(np.linalg.norm(x - y) - 0.11) < 5e-3 and abs(np.linalg.norm(x - z) - 2.97) < 5e-3, "5절 ZZ feature map 커널 표: 거리 0.11, 2.97"
+assert np.allclose(K, K.T) and (np.linalg.eigvalsh(K) > -1e-10).all(), "5절: 네 점의 커널 행렬은 대칭·양의 준정부호"
 
 # ── 4. n_local (real_amplitudes): Ry 층 + CX 사다리 ────────────────
 def real_amplitudes_gates(n, reps, theta):
@@ -133,6 +146,8 @@ Ua = seq(real_amplitudes_gates(n, reps, theta))
 psi = Ua @ ket('0'*n)
 print(f"4) real_amplitudes n={n}, reps={reps}: 파라미터 {len(theta)}개, CX {reps*(n-1)}개, 출력 진폭이 전부 실수? {np.allclose(psi.imag, 0)}")
 print("   진폭:", psi.real)
+assert len(theta) == 12 and reps*(n-1) == 6, "5절 real_amplitudes: 파라미터 12개, CX 6개"
+assert len(psi) == 16 and np.allclose(psi.imag, 0), "5절 real_amplitudes: 출력 진폭 16개가 전부 실수"
 
 # 바렌 고원 맛보기: 큐비트 수를 늘리며 ∂<Z0>/∂θ0 의 분산
 def grad_var(n, reps, samples=60):
@@ -149,6 +164,10 @@ print("5) 바렌 고원: Var[∂<Z0>/∂θ0], reps=n (깊이가 큐비트 수에
 vars_ = []
 for nq in (2, 4, 6, 8):
     v = grad_var(nq, nq, samples=80); vars_.append(v); print(f"   n={nq}: {v:.5f}")
+for v, v_md in zip(vars_, (0.2414, 0.0560, 0.0179, 0.0047)):
+    assert abs(v - v_md) < 5e-5, "5절 불모 고원 표: Var[∂<Z0>/∂θ0] (n = 2, 4, 6, 8)"
+assert abs(vars_[0] - 0.24) < 5e-3 and abs(vars_[3] - 0.005) < 5e-4, "1절 요약·9절: n = 2 → 8 에서 0.24 → 0.005"
+assert all(1/4.5 < vars_[i+1] / vars_[i] < 1/3 + 0.01 for i in range(3)), "5절: 2큐비트 늘어날 때마다 약 1/3~1/4"
 
 # ── 6. 그림 ───────────────────────────────────────────────────────
 import matplotlib; matplotlib.use("Agg")
@@ -158,7 +177,7 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.4))
 Uq = seq(qft_gates(3))
 ax1.imshow(np.angle(Uq), cmap="twilight", vmin=-np.pi, vmax=np.pi); ax1.set_title("QFT(3큐비트) 행렬의 위상"); ax1.set_xlabel("열 k"); ax1.set_ylabel("행 j")
 ax2.semilogy([2, 4, 6, 8], vars_, 'o-', color="#4C6EF5"); ax2.set_xlabel("큐비트 수 n"); ax2.set_ylabel("Var[d<Z0>/dθ0]"); ax2.set_title("기울기 분산이 지수적으로 줄어든다")
-plt.tight_layout(); plt.savefig("ch06_results.png", dpi=150); print("6) saved ch06_results.png")
+plt.tight_layout(); plt.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch06_results.png"), dpi=150); print("6) saved ch06_results.png")
 
 # ── 연습문제 검산 (8절) ──────────────────────────────────────────
 # 8절 해답(과 7절이 인용한 reps = 1 커널값)의 수치를 전부 다시 계산한다. 위쪽 코드·난수(rng)·그림은 건드리지 않는다.
@@ -181,6 +200,8 @@ for ex_a, ex_b in [(2, 5), (5, 2)]:
 ex_nq = ex_n + ex_n*(ex_n-1)//2; ex_np = ex_n*(ex_n+1)//2             # QFT 게이트 6개, 위상 더하기 게이트 6개
 ex_struct = seq(ex_g[:ex_nq] + [gate.conj().T for gate in ex_g[ex_nq:ex_nq+ex_np]] + ex_g[ex_nq+ex_np:])
 print("[연습 1] 시간 순서 'QFT → 위상 빼기(각의 부호만 반대) → QFT⁻¹' = U† :", np.allclose(ex_struct, ex_Usub))
+assert np.allclose(ex_Usub, ex_Uadd.conj().T) and ex_ok, "8절 문제 1: 거꾸로 돌린 회로는 |a>|b> → |a>|b−a mod 8> (64가지)"
+assert np.allclose(ex_struct, ex_Usub), "8절 문제 1: QFT → 위상 빼기 → QFT⁻¹ = U†"
 
 # 문제 2: 주기 r 인 빗 상태의 QFT 는 N/r 의 배수에서만 피크
 ex_Uq = seq(qft_gates(3))
@@ -196,6 +217,10 @@ print("[연습 2] 오프셋을 바꿔도 확률 분포는 같다: 주기 4 (오�
 ex_amp = ex_Uq @ ex_comb(2, 1)
 print("[연습 2] 오프셋 1 은 위상에만 남는다: 주기 2 상태의 피크 진폭 위상/2π =",
       {int(k): float(np.round((np.angle(ex_amp[k]) / (2*np.pi)) % 1, 3)) for k in (0, 4)}, "(오프셋 0 이면 둘 다 0)")
+assert np.allclose(ex_p4, [0.25, 0, 0.25, 0, 0.25, 0, 0.25, 0]), "8절 문제 2: 주기 4 → k = 0, 2, 4, 6 에서 각 0.25"
+assert np.allclose(ex_p2, [0.5, 0, 0, 0, 0.5, 0, 0, 0]), "8절 문제 2: 주기 2 → k = 0, 4 에서 각 0.5"
+assert all(np.allclose(np.abs(ex_Uq @ ex_comb(4, o))**2, ex_p4) for o in range(4)) \
+    and all(np.allclose(np.abs(ex_Uq @ ex_comb(2, o))**2, ex_p2) for o in range(2)), "8절 문제 2: 오프셋은 확률 분포를 바꾸지 않는다"
 
 # 문제 3 (과 7절): ZZ feature map 의 reps = 1, 2, 3 커널
 ex_x = np.array([0.3, 1.2]); ex_y = np.array([0.35, 1.1]); ex_z = np.array([2.5, -0.8])   # 3절(본문 5절 표)과 같은 세 점
@@ -204,3 +229,6 @@ ex_Kxz = [kernel(ex_x, ex_z, r) for r in (1, 2, 3)]
 print("[연습 3] K(x,y), reps = 1, 2, 3 :", " → ".join(f"{v:.4f}" for v in ex_Kxy))
 print("[연습 3] K(x,z), reps = 1, 2, 3 :", " → ".join(f"{v:.4f}" for v in ex_Kxz))
 print(f"[연습 3] K(x,z) 가 가장 작은 reps = {int(np.argmin(ex_Kxz)) + 1},  reps 가 늘 때 K(x,z) 가 단조 감소? {bool(np.all(np.diff(ex_Kxz) < 0))}")
+assert np.allclose(ex_Kxy, [0.955, 0.962, 0.981], atol=5e-4), "8절 문제 3: K(x, y) = 0.955 → 0.962 → 0.981 (reps = 1, 2, 3)"
+assert np.allclose(ex_Kxz, [0.071, 0.725, 0.804], atol=5e-4), "8절 문제 3: K(x, z) = 0.071 → 0.725 → 0.804 (7절의 0.07, 0.72)"
+assert int(np.argmin(ex_Kxz)) + 1 == 1 and not bool(np.all(np.diff(ex_Kxz) < 0)), "8절 문제 3: K(x, z) 는 reps = 1 에서 가장 작고 단조 감소가 아니다"

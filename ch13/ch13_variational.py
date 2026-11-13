@@ -2,6 +2,7 @@
 VQE(TFIM n=4, 하드웨어 효율 ansatz), 파라미터 이동 규칙, 샷 잡음, QAOA MaxCut, 불모 고원(barren plateau)
 규약: big-endian (q0 = 최상위 비트), seed=7
 """
+import os
 import numpy as np
 from scipy.optimize import minimize
 import matplotlib
@@ -444,7 +445,7 @@ ax.semilogy(ns, var_shallow_l, "^-", label="얕은(L=1)·국소 Z0Z1")
 ax.semilogy(ns, [2.0 ** (-k) for k in ns], "k:", label="2^(-n)")
 ax.set_xlabel("n"); ax.set_ylabel("Var[dE/dθ0]"); ax.set_title("불모 고원"); ax.legend(fontsize=8)
 fig.tight_layout()
-fig.savefig("ch13_results.png", dpi=130)
+fig.savefig(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ch13_results.png"), dpi=130)
 print("7) saved ch13_results.png")
 
 # ── 게이트 비용 기록 (2큐비트 게이트 / 깊이 / T-count) ──

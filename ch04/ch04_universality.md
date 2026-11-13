@@ -130,7 +130,7 @@ print(np.linalg.norm(Operator(d).data - Operator(qc).data))   # ε 수준 — �
 
 모든 수치는 `ch04_universality.py`를 `seed=7`로 실행한 출력이다(실행 시간 1.2초).
 
-**HTHT의 회전각.** 실측 θ = 1.096057 rad = 0.348886π, cos(θ/2) = 0.853553 = cos²(π/8). 수식과 일치한다.
+**HTHT의 회전각.** 계산값 θ = 1.096057 rad = 0.348886π, cos(θ/2) = 0.853553 = cos²(π/8). 수식과 일치한다.
 
 **{H, T} 전수 탐색.** 목표 U = Rx(1.0)Ry(0.7)을 길이 L 이하의 모든 단어로 근사했다. 오차는 두 SU(2) 원소 사이의 회전각이다.
 
@@ -202,7 +202,7 @@ print(len(list(c_cz.all_operations())), len(c_cz))   # 게이트 수, Moment 수
 
 **T-count가 비용인 환경, √X가 비용인 환경.** 오류 정정 환경에서는 Clifford 게이트는 싸고 T는 비싸다(T는 마법 상태 증류가 필요). 따라서 회로 비용 = T-count이고, 연속 회전 하나마다 Solovay–Kitaev나 더 좋은 합성(Ross–Selinger)으로 수십 개의 T가 들어간다. 반면 현재의 노이즈 하드웨어(14장)에서는 연속 회전 Rz가 가상 게이트라 공짜이고, 2큐비트 게이트 수와 회로 깊이가 비용이다. 같은 회로도 두 환경에서 비용 함수가 다르므로, "이 알고리즘은 게이트 몇 개"라는 말은 어느 비용 함수인지 밝혀야 의미가 있다. 이 책에서는 2부와 4부의 모든 회로에 "2큐비트 게이트 수 / 깊이 / T-count" 세 개를 함께 적는다.
 
-**연결성은 숫자에 안 보이는 비용이다.** 사용자 회로의 CNOT 수와 하드웨어 회로의 CNOT 수는 다르다. IBM Heron은 heavy-hex 격자로 큐비트당 이웃이 2~3개뿐이므로, 전체 연결을 가정한 회로(예: QFT의 모든 큐비트 쌍 제어 회전)는 라우팅 후 CNOT이 수 배로 늘어난다. 6장 QFT와 14장 하드웨어 실행에서 이 차이를 직접 재본다.
+**연결성은 숫자에 안 보이는 비용이다.** 사용자 회로의 CNOT 수와 하드웨어 회로의 CNOT 수는 다르다. IBM Heron은 heavy-hex 격자로 큐비트당 이웃이 2\~3개뿐이므로, 전체 연결을 가정한 회로(예: QFT의 모든 큐비트 쌍 제어 회전)는 라우팅 후 CNOT이 수 배로 늘어난다. 6장 QFT와 14장 하드웨어 실행에서 이 차이를 직접 재본다.
 
 **이 장의 한계.** 전수 탐색은 길이 14까지만 했고 Solovay–Kitaev는 구현하지 않았다. 라우팅(SABRE)과 레이아웃 비용은 14장에서 재고, 백엔드별 트랜스파일 설정은 24장에서 다룬다.
 
@@ -235,7 +235,7 @@ print(len(list(c_cz.all_operations())), len(c_cz))   # 게이트 수, Moment 수
 **출처.**
 
 - Nielsen & Chuang, 4.2절(따름정리 4.2), 4.3절(제어 게이트, 그림 4.9 Toffoli), 4.5절(범용 게이트 집합, 4.5.3 {H,T}, 4.5.4 근사 하한), 부록 3(Solovay–Kitaev). 등급 A.
-- Kaye–Laflamme–Mosca, 4.3~4.4절(범용 게이트 집합과 근사). 등급 A.
+- Kaye–Laflamme–Mosca, 4.3\~4.4절(범용 게이트 집합과 근사). 등급 A.
 - Dawson, C. M. & Nielsen, M. A., "The Solovay–Kitaev algorithm", Quantum Inf. Comput. 6, 81 (2006), arXiv:quant-ph/0505030. 등급 A.
 - Ross, N. J. & Selinger, P., "Optimal ancilla-free Clifford+T approximation of z-rotations", Quantum Inf. Comput. 16, 901 (2016), arXiv:1403.2975. 등급 A.
 - [Qiskit `transpile`](https://quantum.cloud.ibm.com/docs/en/api/qiskit/compiler#transpile), [`SolovayKitaev`](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.passes.SolovayKitaev), [Transpiler 개요](https://quantum.cloud.ibm.com/docs/en/guides/transpile). 등급 A.
