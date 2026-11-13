@@ -6,9 +6,11 @@
 
 ## 1. 요약
 
-지금까지의 장은 모두 시뮬레이터 위에서 정확했다. 이 장은 그 회로를 **실제 QPU에 내보내기 전에 해야 할 일**을 다룬다: 공개 사양서의 오류율로 노이즈 모델을 짜서 결과를 먼저 예측하고, 연결 그래프(heavy-hex)에 맞춰 라우팅 비용을 세고, 무료 한도(IBM Open Plan: 28일당 QPU 10분) 안에서 제출 계획을 세우고, 실측을 기록할 표를 준비한다. **이 세션에서는 네트워크·계정이 없어 실제 QPU 제출은 하지 못했다** — 5절의 "QPU 실측" 열은 비어 있고, `ch14_submit.py`를 돌린 뒤 채운다.
+지금까지의 장은 모두 시뮬레이터 위에서 정확했다. 이 장은 그 회로를 **실제 QPU에 내보내기 전에 해야 할 일**을 다룬다: 공개 사양서의 오류율로 노이즈 모델을 짜서 결과를 먼저 예측하고, 연결 그래프(heavy-hex)에 맞춰 라우팅 비용을 세고, 무료 한도(IBM Open Plan: 28일당 QPU 10분) 안에서 제출 계획을 세우고, 실측을 기록할 표를 준비한다. 처음 쓸 때는 네트워크·계정이 없어 예측만 실었고, **2026-11-11 `ibm_fez`에서 실측을 더했다** — 5절 표의 "QPU 실측" 열과 부록 A(`appA/appA_qpu_runs.md`).
 
 numpy로 확인한 것(Heron r2 공개 중앙값: CZ 오류 3×10⁻³, 1큐비트 2.5×10⁻⁴, 판독 1.3×10⁻², T1 180 µs, T2 120 µs): (1) 회로 5개의 예측 성공 확률 — GHZ-5 1.000 → 0.918, BV 1.000 → 0.925, QPE 3비트 1.000 → 0.881, Grover n=3 0.945 → 0.759, HVA 에너지 −4.646 → −4.433(+0.21, 그중 0.12가 판독 오류). (2) **오류 예산** 1 − ∏(1 − rᵢ)는 얕은 회로(GHZ·BV·QPE)의 실패율을 0.5\~2%p 안에서 맞히지만 CZ 32개의 Grover는 9%p 낮게 잡는다 — "CZ 수 × 3×10⁻³ + 큐비트 수 × 1.3×10⁻²"는 낙관적인 하한에 가까운 암산 공식이다. (3) **라우팅**: heavy-hex는 삼각형이 없어 Toffoli는 8-CX 선형 판을 써야 하고(4장), QPE는 계수 큐비트끼리의 역 QFT 때문에 SWAP 2개(CZ 6개)가 들어간다. (4) CZ 오류율을 2배로 하면 Grover 성공이 0.76 → 0.69, 4배면 0.57 — 성공 − 1/8이 CZ 오류 3×10⁻³마다 0.89배씩 줄어드는 지수 감소다. (5) **시간 예산**: 샷당 ≈ 255 µs(반복 지연이 지배), 4000샷 × 6회로 ≈ 6.1초 — 10분의 약 1%.
+
+실측(2026-11-11, `ibm_fez`, 4000샷): GHZ 0.920 · BV 0.889 · Grover 0.814 · QPE 0.922, HVA ⟨H⟩ −4.322 ± 0.039. 예측과의 차는 −3.6\~+5.5%p로 흩어졌다 — GHZ는 거의 그대로, QPE·Grover는 예측보다 좋고(실기 트랜스파일 CZ가 각각 15·39로 이 장의 18·32와 다르다), BV만 나쁘다(보조 큐비트 하나의 시작 오류로 설명된다 — 부록 A).
 
 이 장의 메시지: 실기 결과는 "맞다/틀리다"가 아니라 **예측과의 차이**로 읽는다. 예측 안에 들어오면 노이즈 모델이 맞는 것이고, 벗어나면 사양서가 담지 않는 것(크로스토크, 특정 큐비트의 나쁜 보정, 라우팅으로 늘어난 깊이)이 있다는 신호다. 25장(오류 완화·정정)과 27장(재현 가능 워크플로)이 이 표 위에 선다.
 
@@ -72,52 +74,53 @@ class Routed:
 
 **게이트 비용 기록(라우팅 후).** 5절 표의 CZ·SWAP 열. QPE는 계수 큐비트 3개가 표적과는 모두 인접하지만 서로는 인접하지 않아 역 QFT의 제어 위상 3개 중 2개에 SWAP이 들어간다(CZ 12 → 18). Grover는 가운데 큐비트를 허브에 두면 SWAP 0 — 단 CCZ가 8-CX 판이라 2회 반복 = CZ 32. BV는 s의 1인 큐비트 셋을 허브의 세 이웃에 두면 SWAP 0, CZ 3(이전 판은 q3을 허브에서 먼 물리 0에 두어 SWAP 1, CZ 6이 되었다 — 레이아웃 하나가 CZ 수를 두 배로 만든다).
 
-**Qiskit Runtime 제출 스크립트(작성됨, 미실행).** `ch14_submit.py`. 두 모드: `fake`는 Heron 가짜 백엔드(`FakeMarrakesh`)의 보정 데이터로 Aer 노이즈 모델을 만들어 로컬에서 돌리고(이 장의 numpy 모델과 비교할 두 번째 예측), `real`은 실제 백엔드에 제출한다.
+**Qiskit Runtime 제출 스크립트(실행 완료, 2026-11-11).** `ch14_submit.py`. 두 모드: `fake`는 Heron 가짜 백엔드(`FakeMarrakesh`)의 보정 데이터로 Aer 노이즈 모델을 만들어 로컬에서 돌리고(이 장의 numpy 모델과 비교할 두 번째 예측), `real`은 장치를 고르고 트랜스파일해 제출 계획만 찍는다 — 실제 제출은 `real --yes`일 때만 한다. 기록(`ch14_record_<모드>.json`)에는 두 작업 id, 회로별 2큐비트 수·깊이·물리 큐비트, HVA 표준오차가 남는다.
 
 ```python
-# qiskit==2.5.x, qiskit-ibm-runtime>=0.40,<0.53 — 작성됨, 미실행 (ch14_submit.py 핵심)
-from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2, EstimatorV2
+# qiskit==2.6.2, qiskit-ibm-runtime==0.52.0 — 작성됨, 미실행(같은 호출을 ch14_submit.py real --yes 로 2026-11-11 실행)
+from qiskit_ibm_runtime import QiskitRuntimeService, Sampler, Estimator
 from qiskit.transpiler import generate_preset_pass_manager
 
 service = QiskitRuntimeService()                                   # save_account 로 저장한 Open Plan 계정
 backend = service.least_busy(operational=True, simulator=False, min_num_qubits=20,
-                             filters=lambda b: getattr(b, "processor_type", {}).get("family") == "Heron")
+                             filters=lambda b: (getattr(b, "processor_type", None) or {}).get("family") == "Heron")
 pm = generate_preset_pass_manager(optimization_level=3, backend=backend, seed_transpiler=7)
 isa = {k: pm.run(qc) for k, qc in CIRCUITS.items()}               # ISA 회로: 백엔드 기저·연결에 맞춰 라우팅됨
-for k, qc in isa.items():
-    print(k, qc.count_ops().get('cz', 0), qc.depth())              # 5절 표의 'CZ(트랜스파일)' 열
+for k, qc in isa.items():                                          # 2큐비트 수와 게이트만 센 깊이(barrier·측정 제외)
+    print(k, qc.count_ops().get('cz', 0), qc.depth(lambda i: i.operation.name not in ('barrier', 'measure')))
 
-sampler = SamplerV2(mode=backend)                                  # Open Plan: 세션 불가 → 작업(또는 배치) 모드
+sampler = Sampler(mode=backend)                                    # Open Plan: 세션 불가 → 작업(또는 배치) 모드
 job = sampler.run(list(isa.values()), shots=4000)                  # PUB 4개를 한 작업으로 (오버헤드 1회)
-res = job.result()
-counts = {k: (pub.data.c if hasattr(pub.data, 'c') else pub.data.meas).get_counts()   # measure_all 은 레지스터 이름이 meas
-          for k, pub in zip(isa, res)}
-
 hva_isa = pm.run(hva_tfim()); H_isa = H_TFIM.apply_layout(hva_isa.layout)   # 관측량도 레이아웃을 따라간다
-estimator = EstimatorV2(mode=backend)
+estimator = Estimator(mode=backend)
 estimator.options.resilience_level = 0                             # 기본 1 = TREX 판독 완화; 0 으로 두어야 '판독 오류 포함' 예측과 비교
-ev = estimator.run([(hva_isa, H_isa)], precision=0.02).result()[0].data.evs   # 샷 ≈ 1/0.02² = 2500
+ejob = estimator.run([(hva_isa, H_isa)], precision=0.02)          # 목표 표준오차 0.02 (샷 ≈ 2500)
+print(job.job_id(), ejob.job_id())                                 # 결과를 기다리기 전에 두 id 를 남긴다 — 끊기면 service.job(id)
 
-print(job.usage())                  # 5절 '사용 시간' 열(초). metrics()['usage'] 의 키 이름은 runtime 0.51 에서 바뀌었다
+counts = {k: pub.data.c.get_counts() for k, pub in zip(isa, job.result())}
+d = ejob.result()[0].data; print(d.evs, d.stds)                    # stds 는 실제 표준오차(2026-11-11: 0.039)
+print(job.usage(), ejob.usage())    # 5절 '사용 시간' 열(초). metrics()['usage'] 의 키 이름은 runtime 0.51 에서 바뀌었다
 ```
 
-핵심 네 가지. `apply_layout` — 트랜스파일이 논리 큐비트 4개를 백엔드의 물리 큐비트(Heron 156개) 중 일부로 옮기므로 관측량도 같이 옮겨야 한다(빼먹으면 회로와 관측량의 큐비트 수가 달라 `ValueError`가 난다 — 조용히 틀리지는 않는다). `precision=0.02` — Estimator는 샷 대신 목표 표준오차를 받고, Runtime은 이것을 샷 ≈ 1/precision² = 2500으로 환산한다(기본값 0.015625 = 1/√4096). `resilience_level = 0` — Runtime EstimatorV2의 기본값 1은 판독 오류 완화(TREX)를 켜므로, 그대로 두면 5절의 '판독 오류 포함' 예측(−4.433)이 아니라 '판독 오류 제외' 예측(−4.555)과 비교해야 한다. 고전 비트 매핑 — Qiskit 비트열은 리틀 엔디안(c\_{n−1}…c₀ 순서로 인쇄)이다. BV·Grover는 q0이 이 책 빅 엔디안 문자열의 첫 글자이므로 `measure(range(n), range(n)[::-1])`로 역순 매핑하고(3장 `to_qiskit_order`와 같은 이유), QPE는 `QFTGate(t).inverse()`가 리틀 엔디안 정수 x = Σ q\_j 2^j를 내놓으므로 `measure(range(t), range(t))`로 그대로 매핑해야 '001'이 나온다(역순으로 매핑하면 '100' — 이전 판 `ch14_submit.py`의 버그).
+핵심 네 가지. `apply_layout` — 트랜스파일이 논리 큐비트 4개를 백엔드의 물리 큐비트(Heron 156개) 중 일부로 옮기므로 관측량도 같이 옮겨야 한다(빼먹으면 회로와 관측량의 큐비트 수가 달라 `ValueError`가 난다 — 조용히 틀리지는 않는다). `precision=0.02` — Estimator는 샷 대신 목표 표준오차를 받고, Runtime은 이것을 샷 ≈ 1/precision² = 2500으로 환산한다(기본값 0.015625 = 1/√4096). 목표일 뿐이라 실제 표준오차는 결과의 `stds`로 읽는다 — 2026-11-11 실행은 0.039였다. `resilience_level = 0` — Runtime Estimator의 기본값 1은 판독 오류 완화(TREX)를 켜므로, 그대로 두면 5절의 '판독 오류 포함' 예측(−4.433)이 아니라 '판독 오류 제외' 예측(−4.555)과 비교해야 한다. 고전 비트 매핑 — Qiskit 비트열은 리틀 엔디안(c\_{n−1}…c₀ 순서로 인쇄)이다. BV·Grover는 q0이 이 책 빅 엔디안 문자열의 첫 글자이므로 `measure(range(n), range(n)[::-1])`로 역순 매핑하고(3장 `to_qiskit_order`와 같은 이유), QPE는 `QFTGate(t).inverse()`가 리틀 엔디안 정수 x = Σ q\_j 2^j를 내놓으므로 `measure(range(t), range(t))`로 그대로 매핑해야 '001'이 나온다(역순으로 매핑하면 '100' — 이전 판 `ch14_submit.py`의 버그).
 
-**버전 주의.** qiskit-ibm-runtime 0.50(2026-09-24)부터 `SamplerV2`와 `EstimatorV2`는 폐기 예정(deprecated)이고, 대체는 `qiskit_ibm_runtime.executor_sampler.Sampler`와 `executor_estimator.Estimator`다. 이 장의 코드는 폐기 예정 인터페이스로 썼으므로 0.52까지를 전제로 한다. 실행으로 검증할 때 새 인터페이스로 옮기고 이 문단을 지운다. 사용 시간의 키 이름도 0.51에서 바뀌었으므로(`qpu_charge_time_seconds`) 키 대신 `job.usage()`를 쓴다.
+**버전 주의.** qiskit-ibm-runtime 0.50(2026-09-24)부터 폐기 예정(deprecated)인 것은 서버 쪽 `SamplerV2`·`EstimatorV2`(`qiskit_ibm_runtime.server_side`)다. 0.52의 최상위 `Sampler`·`Estimator`는 이미 클라이언트 쪽 구현(`executor_sampler.Sampler`, `executor_estimator.Estimator`)을 가리키고, 최상위 `SamplerV2`·`EstimatorV2`도 같은 클래스의 별칭이다(설치된 패키지의 `__init__.py`로 확인). 그래서 이 장의 코드는 최상위 `Sampler`·`Estimator`를 쓰고 runtime ≥ 0.52를 전제로 한다. 사용 시간의 키 이름은 0.51에서 바뀌었으므로(`qpu_charge_time_seconds`) 키 대신 `job.usage()`를 쓴다.
 
 ## 5. 시뮬레이션 결과(예측)와 QPU 기록 표
 
 모든 수치는 `ch14_hardware.py`를 `seed=7`로 실행한 출력이다(실행 5초). 노이즈 모델: r\_CZ = 3×10⁻³(탈분극 p = 3.75×10⁻³), r\_1q = 2.5×10⁻⁴(p = 3.75×10⁻⁴), ε₀₁ = 1.0×10⁻², ε₁₀ = 1.6×10⁻², T1 = 180 µs, T2 = 120 µs, t\_CZ = 68 ns, t\_1q = 32 ns, 유휴 열완화 포함, 판독 전 별도 열완화 없음. CZ 한 번 동안 T1 손실 3.8×10⁻⁴이고 가장 긴 Grover도 3.6 µs라 T2보다 훨씬 짧다 — 게이트 오류와 판독 오류가 지배한다.
 
-**회로별 예측과 QPU 기록.** "QPU 실측"과 "사용 시간" 열은 `ch14_submit.py real` 실행 후 `ch14_record_real.json`에서 채운다.
+**회로별 예측과 QPU 기록.** "QPU 실측"과 "사용 시간" 열은 `ch14_record_real.json`(2026-11-11 `ibm_fez`, 4000샷, Sampler 작업 `dbq0qmoqtr0c738f53u0`, Estimator 작업 `dbq0qpk4148s739vbffg`)에서 `ch14_hardware.py`의 7)이 계산한 값이다. 실측 성공은 ± 이항 표준오차, HVA는 ± Estimator 표준오차. 사용 시간은 작업 단위로만 나온다(회로 4개가 한 Sampler 작업).
 
 | 회로 | 큐비트 | CZ (SWAP) | 1q | 성공 이상 | 성공 예측 | TVD | 오류 예산 | QPU 실측 | 백엔드 · 사용 시간 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GHZ-5 (3장) | 5 | 4 (0) | 9 | 1.000 | 0.918 | 0.082 | 0.077 | — | — |
-| BV s=1011 (8장) | 5 | 3 (0) | 16 | 1.000 | 0.925 | 0.075 | 0.063 | — | — |
-| Grover n=3 k=2 (9장) | 3 | 32 (0) | 95 | 0.945 | 0.759 | 0.186 | 0.147 | — | — |
-| QPE 3비트 T (10장) | 4 | 18 (2) | 43 | 1.000 | 0.881 | 0.119 | 0.099 | — | — |
-| HVA p=1 TFIM (13장) | 4 | 6 (0) | 20 | ⟨H⟩ = −4.646 | −4.433 (판독 오류 제외 −4.555) | — | — | — | — |
+| GHZ-5 (3장) | 5 | 4 (0) | 9 | 1.000 | 0.918 | 0.082 | 0.077 | 0.920 ± 0.004 | ibm\_fez · 6초(회로 4개 합) |
+| BV s=1011 (8장) | 5 | 3 (0) | 16 | 1.000 | 0.925 | 0.075 | 0.063 | 0.889 ± 0.005 | 〃 |
+| Grover n=3 k=2 (9장) | 3 | 32 (0) | 95 | 0.945 | 0.759 | 0.186 | 0.147 | 0.814 ± 0.006 | 〃 |
+| QPE 3비트 T (10장) | 4 | 18 (2) | 43 | 1.000 | 0.881 | 0.119 | 0.099 | 0.922 ± 0.004 | 〃 |
+| HVA p=1 TFIM (13장) | 4 | 6 (0) | 20 | ⟨H⟩ = −4.646 | −4.433 (판독 오류 제외 −4.555) | — | — | −4.322 ± 0.039 | ibm\_fez · 3초 |
+
+**실측 읽는 법(요약 — 자세한 분석은 부록 A).** 실측 TVD는 GHZ 0.079 · BV 0.111 · Grover 0.132 · QPE 0.078. (1) 예측과의 차는 GHZ +0.2, BV −3.6, Grover +5.5, QPE +4.1%p, HVA +0.110(2.8σ)이다. 예측은 "이 근처"였고 회로마다 ±5%p 안팎으로 흩어졌다(7절). (2) 실기 트랜스파일러는 이 장과 다른 회로를 만들었다: Grover CZ 39(이 장 32), QPE CZ 15(이 장 18). CZ가 더 많은 Grover가 예측보다 좋았으므로 그날 쓰인 연결은 중앙값(3×10⁻³)보다 좋았다 — 보정값 1.6\~2.5×10⁻³(부록 A3). (3) BV의 손실은 대부분 오답 `0000`(5.2%)이고, 이것은 측정하지 않는 보조 큐비트가 |1⟩에서 시작했을 때만 나오는 지문이다. 그 큐비트는 이 작업에 쓰인 13개 큐비트 중 판독 오류가 가장 컸고 HVA 사슬에도 들어갔다. 사양서 숫자 네 개가 보지 못하는 "특정 큐비트 하나"가 얕은 회로의 결과를 정한다.
 
 **모델 구성 요소별 기여(성공 확률).** 한 요소씩 끄고 다시 돌린 값 — 무엇이 결과를 정하는지 보여 준다.
 
@@ -145,7 +148,7 @@ print(job.usage())                  # 5절 '사용 시간' 열(초). metrics()['
 |  | Qiskit + IBM Runtime | Cirq (Google) |
 | --- | --- | --- |
 | 보정 데이터 노이즈 모델 | `NoiseModel.from_backend(backend)` / `AerSimulator.from_backend` / `FakeMarrakesh` | `cirq_google.engine.load_median_device_calibration` → `cirq_google.noise_properties_from_calibration` → `cirq_google.NoiseModelFromGoogleNoiseProperties` |
-| 실기 제출 | `QiskitRuntimeService`, `SamplerV2/EstimatorV2(mode=backend)` | `cirq_google` (일반 공개 없음), IonQ/AQT 플러그인 |
+| 실기 제출 | `QiskitRuntimeService`, `Sampler/Estimator(mode=backend)` | `cirq_google` (일반 공개 없음), IonQ/AQT 플러그인 |
 | 라우팅 | `generate_preset_pass_manager(backend=)` (SABRE) | `cirq.RouteCQC`, `optimize_for_target_gateset` |
 
 ```python
@@ -172,7 +175,7 @@ print(res.histogram(key='m'))                           # 0 과 31 이 각 ≈ 4
 
 **"실기에서 돌았다"는 증거가 아니다.** 이 장의 회로는 모두 노트북이 10⁻⁶초에 정확히 푸는 크기다. QPU 실험의 목적은 알고리즘을 증명하는 것이 아니라 노이즈 모델을 검증하고 "어디까지 믿을 수 있는가"(CZ 수의 한계 ≈ 100 → 0.3 오류 예산)를 재는 것이다. 15장이 이 한계를 "가속의 원천"과 나란히 놓고, 24장이 다른 클라우드(IonQ, Quantinuum, IQM)의 사양서를 같은 표로 비교한다.
 
-**이 세션의 공백.** 실제 제출과 사용 시간 기록은 비어 있다. `ch14_submit.py fake`를 먼저 돌려 Aer 노이즈 모델(실제 보정 데이터 스냅샷)과 이 장의 중앙값 모델을 비교한 뒤 `real`로 제출한다 — 실측이 두 예측보다 나쁜 것이 보통이다(Aer 보정 모델은 트랜스파일러가 좋은 큐비트를 고르면 중앙값 모델보다 나을 수도 있다).
+**실측이 보여 준 것.** 순서는 계획대로였다: `ch14_submit.py fake`(가짜 장치) → `real`. 결과는 "실측이 두 예측보다 나쁘다"는 예상과 달랐다. fake(`fake_marrakesh`)는 다섯 회로 모두 이 장의 예측보다 좋았고(GHZ 0.969, BV 0.978, Grover 0.874, QPE 0.953), 실측은 BV를 빼면 둘 사이에 있었다. 그날의 큐비트별 보정값으로 실제 ISA 회로를 다시 돌려도 GHZ는 3.5%p, BV는 7.2%p를 설명하지 못한다(부록 A3) — 보정값은 몇십 분 전의 평균이고, 한 큐비트의 순간 상태(초기화 실패, TLS 결함)는 담지 못한다. 그래서 실측 기록에는 백엔드·날짜·작업 id와 함께 **물리 큐비트와 그 시각의 보정값**(`env/fetch_ibm_job.py`)을 남긴다.
 
 ## 8. 연습문제와 해답
 
@@ -206,4 +209,4 @@ print(res.histogram(key='m'))                           # 0 과 31 이 각 ≈ 4
 - Li, Ding, Xie, "Tackling the qubit mapping problem for NISQ-era quantum devices" (SABRE), *ASPLOS* 2019.
 - Nation et al., "Scalable mitigation of measurement errors on quantum computers" (mthree), *PRX Quantum* 2, 040326 (2021).
 - Qiskit Aer: `NoiseModel.from_backend`, `depolarizing_error`, `thermal_relaxation_error`; Cirq `depolarize`, `DensityMatrixSimulator`.
-- 환경: Python 3.13.17, numpy 2.5.3, scipy 1.18.1, matplotlib 3.11.2; `ch14_hardware.py` 실행 약 5초, seed = 7. `ch14_submit.py`는 작성만 되고 미실행(PyPI·네트워크 차단, IBM 계정 없음). QPU 실측 열은 비어 있다.
+- 환경: Python 3.13.17, numpy 2.5.3, scipy 1.18.1, matplotlib 3.11.2; `ch14_hardware.py` 실행 약 5초, seed = 7(2026-11-11 Python 3.12.3, numpy 2.5.4 에서 재실행 — 1\~6) 출력 동일, 7) 실측 대조 추가). `ch14_submit.py`: qiskit 2.6.2, qiskit-ibm-runtime 0.52.0, qiskit-aer 0.18.2 — 2026-11-11 `fake`(fake\_marrakesh)·`real`(ibm\_fez, Sampler `dbq0qmoqtr0c738f53u0` 6초, Estimator `dbq0qpk4148s739vbffg` 3초, 4000샷) 실행. 실행 회로와 보정값: `runs/20261111-063819Z_ibm_fez_ch14_isa_calib.json`.

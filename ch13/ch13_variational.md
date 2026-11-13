@@ -209,7 +209,7 @@ log₂ 분산의 기울기: 깊은·전역 −1.01/큐비트(2^{−n} 예측 = �
 | --- | --- | --- |
 | HEA 템플릿 | `real_amplitudes`, `efficient_su2`, `n_local` | `StronglyEntanglingLayers`, `BasicEntanglerLayers`(기본 Rx+CNOT 고리, rotation=qp.RY 로 변경) |
 | QAOA 템플릿 | `qaoa_ansatz(cost_operator, reps)` | `qp.qaoa.maxcut`, `cost_layer`/`mixer_layer` |
-| 기대값 | `StatevectorEstimator` / `EstimatorV2` | `qp.expval(H)` |
+| 기대값 | `StatevectorEstimator` / Runtime `Estimator` | `qp.expval(H)` |
 | 그래디언트 | 직접(이동 규칙) 또는 `EstimatorGradient`(qiskit-algorithms, 유지보수 중단) | `qp.grad`, `diff_method='parameter-shift'/'adjoint'/'backprop'` |
 | 최적화기 | scipy | `AdamOptimizer`, `QNGOptimizer`(양자 자연 그래디언트), `SPSAOptimizer` |
 

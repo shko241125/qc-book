@@ -6,9 +6,9 @@
 #       장치에 제출하려면 환경의 허용 도메인에 IBM Quantum 주소를 더한다.
 PIP="python3 -m pip install --break-system-packages"
 $PIP "numpy>=2.0" "scipy>=1.14" "matplotlib>=3.9" "markdown>=3.6" || true
-ALL='qiskit>=2.5,<3 qiskit-aer>=0.17,<0.19 qiskit-ibm-runtime>=0.42,<0.53 pennylane>=0.45,<0.47 cirq-core>=1.7,<2 qutip>=5.2,<6 qutip-qip>=0.4,<0.5 pylatexenc qualtran>=0.7,<0.8'
+ALL='qiskit>=2.5,<3 qiskit-aer>=0.17,<0.19 qiskit-ibm-runtime>=0.52,<0.54 pennylane>=0.45,<0.47 cirq-core>=1.7,<2 qutip>=5.2,<6 qutip-qip>=0.4,<0.5 pylatexenc qualtran>=0.7,<0.8'
 if ! $PIP $ALL; then                       # 한꺼번에 안 풀리면 묶음별로 넣고, 실패한 묶음을 적어 둔다
-  for grp in "qiskit>=2.5,<3 qiskit-aer>=0.17,<0.19 qiskit-ibm-runtime>=0.42,<0.53" "pennylane>=0.45,<0.47" \
+  for grp in "qiskit>=2.5,<3 qiskit-aer>=0.17,<0.19 qiskit-ibm-runtime>=0.52,<0.54" "pennylane>=0.45,<0.47" \
              "cirq-core>=1.7,<2" "qutip>=5.2,<6 qutip-qip>=0.4,<0.5" "pylatexenc" "qualtran>=0.7,<0.8"; do
     $PIP $grp || echo "설치 실패: $grp" >> /root/qc-book-setup-failures.txt
   done

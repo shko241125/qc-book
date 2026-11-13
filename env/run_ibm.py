@@ -1,5 +1,5 @@
 """run_ibm.py — IBM Quantum 장치(또는 로컬 시뮬레이터)에서 작은 회로를 돌리고 결과를 runs/ 에 남긴다.
-작성됨, 미실행 — 이 스크립트를 쓴 환경에는 qiskit 이 없어 문법 검사만 했다. 첫 실행은 --local 로 한다.
+qiskit==2.6.2, qiskit-ibm-runtime==0.52.0 — 실행 완료(2026-11-11: --local, --circuit bell --yes 로 ibm_kingston).
 
   python env/run_ibm.py --local                      계정 없이 Aer 시뮬레이터로 같은 흐름을 확인한다
   python env/run_ibm.py --save                       API 키와 인스턴스 CRN 을 물어 이 컴퓨터에 저장한다(한 번만)
@@ -12,8 +12,8 @@
 인증 순서: 환경 변수 QISKIT_IBM_TOKEN(+ QISKIT_IBM_INSTANCE) → 저장소 루트의 .env → --save 로 저장한 계정.
 비트 순서: Qiskit 은 리틀 엔디안(오른쪽이 q0)이다. 결과 파일에는 Qiskit 순서와 이 책의 순서(왼쪽이 q0)를 둘 다 적는다.
 과금: Open 플랜은 28일 이동 구간마다 QPU 10분. 대기 시간은 세지 않고 QPU 가 실제로 돈 시간만 센다. 작업이 끝나면 사용량을 찍는다.
-주의: qiskit-ibm-runtime 0.50 부터 SamplerV2 는 폐기 예정(deprecated)이다(대체: qiskit_ibm_runtime.executor_sampler.Sampler).
-      이 스크립트는 SamplerV2 를 쓰므로 requirements/sdk.txt 가 상한(<0.53)을 둔다. 폐기 경고가 떠도 동작은 한다(실행으로 확인하지는 못했다).
+Runtime 인터페이스: 최상위 Sampler 는 0.52 에서 클라이언트 쪽 프리미티브(executor_sampler.Sampler)다. 0.50 부터 폐기 예정인
+      것은 서버 쪽 SamplerV2(qiskit_ibm_runtime.server_side)이며 이 스크립트는 쓰지 않는다. 그래서 runtime 하한이 0.52 다.
 """
 import argparse
 import datetime
@@ -94,7 +94,7 @@ def build(name, n):
 
 
 def counts_of(pub):
-    """SamplerV2 결과 하나에서 counts 를 꺼낸다(레지스터 이름은 measure_all 의 'meas')."""
+    """Sampler 결과 하나에서 counts 를 꺼낸다(레지스터 이름은 measure_all 의 'meas')."""
     try:
         return pub.join_data().get_counts()
     except Exception:
@@ -175,7 +175,7 @@ def main():
     if a.save:
         return save_account()
     from qiskit.transpiler import generate_preset_pass_manager
-    from qiskit_ibm_runtime import SamplerV2 as Sampler
+    from qiskit_ibm_runtime import Sampler
     qc, ideal = build(a.circuit, a.n)
 
     if a.local:

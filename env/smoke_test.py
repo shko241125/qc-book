@@ -63,7 +63,7 @@ def t_aer():
 
 def t_runtime():
     import qiskit_ibm_runtime  # noqa: F401
-    from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2  # noqa: F401
+    from qiskit_ibm_runtime import QiskitRuntimeService, Sampler, Estimator  # noqa: F401
     return version("qiskit-ibm-runtime"), True, "불러오기만 확인(계정 불필요)"
 
 

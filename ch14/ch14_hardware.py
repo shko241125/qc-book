@@ -400,3 +400,32 @@ for ax, name in zip(axs.ravel(), [k for k in results if k != "HVA"]):
     ax.set_title(f"{name} — CZ {r['cz']}, 성공 {r['succ0']:.2f}→{r['succ1']:.2f}"); ax.legend(fontsize=8)
 fig.tight_layout(); fig.savefig("ch14_results.png", dpi=130)
 print("6) saved ch14_results.png")
+
+# ---------- 7) QPU 실측 대조 (ch14_submit.py real 의 기록 — 파일이 없으면 건너뛴다) ----------
+import json, pathlib
+_here = pathlib.Path(__file__).resolve().parent
+_rec = _here / "ch14_record_real.json"
+if _rec.exists():
+    rec = json.loads(_rec.read_text(encoding="utf-8"))
+    # 2026-11-11 실행분은 GHZ 를 measure_all(Qiskit 순서)로 쟀다. bit_order = "book" 인 기록은 모두 책 순서.
+    flip = {"ghz5"} if rec.get("bit_order") != "book" else set()
+    sj = rec["jobs"]["ghz5"]["job_id"]
+    isa_file = next((p for p in sorted((_here.parent / "runs").glob("*_ch14_isa_calib.json"))
+                     if sj in json.loads(p.read_text(encoding="utf-8"))), None)
+    isa_pubs = json.loads(isa_file.read_text(encoding="utf-8"))[sj]["pubs"] if isa_file else None
+    print(f"\n7) QPU 실측 — {rec['backend']} {rec['t']}, {rec['shots']}샷, sampler {sj}, estimator {rec['jobs']['hva'].get('job_id')}, 사용 {rec.get('qpu_seconds')}초")
+    keys = ["ghz5", "bv1011", "grover101", "qpe_t"]
+    for i, (name, key) in enumerate(zip([c[0] for c in CIRCS], keys)):
+        r = results[name]; c = rec["jobs"][key]["counts"]; N = sum(c.values())
+        pm = np.zeros(2 ** r["n"])
+        for b, v in c.items(): pm[int(b[::-1] if key in flip else b, 2)] += v / N
+        good = [k for k in range(2 ** r["n"]) if r["p0"][k] > 0.2]
+        s = pm[good].sum()
+        cz = rec["jobs"][key].get("two_qubit_gates") or (sum(1 for g in isa_pubs[i] if g[0] == "cz") if isa_pubs else None)
+        print(f"   {name:22s}: 실측 성공 {s:.3f} ± {np.sqrt(s * (1 - s) / N):.3f} (예측 {r['succ1']:.3f}, 차 {100 * (s - r['succ1']):+.1f}%p) "
+              f"| TVD {tvd(r['p0'], pm):.3f} | 실기 트랜스파일 CZ {cz} (이 장 라우팅 {r['cz']})")
+    h = rec["jobs"]["hva"]
+    sd = h.get("stds")
+    if sd is None and isa_file:
+        sd = json.loads(isa_file.read_text(encoding="utf-8"))[h["job_id"]]["estimator"]["stds"]
+    print(f"   HVA ⟨H⟩ 실측 {h['evs']:.3f} ± {sd:.3f} (예측 {results['HVA']['e_noisy']:.3f}, 차 {h['evs'] - results['HVA']['e_noisy']:+.3f} = {(h['evs'] - results['HVA']['e_noisy']) / sd:+.1f}σ)")

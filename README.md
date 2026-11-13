@@ -17,7 +17,7 @@ python env/smoke_test.py          # 표에 "통과"가 줄줄이 나오면 끝
 ## 책 내용 다시 돌리기
 
 ```bash
-bash env/test_all.sh                                   # 모든 장의 numpy 스크립트(SDK 불필요, 10~15분). SDK 스크립트까지는 --sdk
+bash env/test_all.sh                                   # 모든 장·부록의 numpy 스크립트(SDK 불필요, 10~15분). SDK 스크립트까지는 --sdk
 python env/extract_snippets.py && python env/run_snippets.py     # 본문의 SDK 스니펫 37개 → runs/snippets-날짜.md
 ```
 
@@ -31,11 +31,12 @@ python env/run_ibm.py --circuit bell         # 제출 계획만 본다
 python env/run_ibm.py --circuit bell --yes   # 제출. 결과는 runs/ 에 JSON 으로 남는다
 ```
 
-14장의 회로 다섯 개(GHZ, BV, Grover, QPE, HVA)는 `cd ch14 && python ch14_submit.py fake` 로 먼저 로컬에서 돌려 보고, `python ch14_submit.py real` 로 제출한다.
+14장의 회로 다섯 개(GHZ, BV, Grover, QPE, HVA)는 `cd ch14 && python ch14_submit.py fake` 로 먼저 로컬에서 돌려 보고, `python ch14_submit.py real` 로 계획을 본 뒤 `real --yes` 로 제출한다.
+끝난 작업의 실제 회로와 그 시각의 보정값은 `python env/fetch_ibm_job.py <job id> --out runs/<이름>.json` 으로 받는다(QPU 사용 없음). 첫 실행(2026-11-11)의 기록과 해석은 부록 A(`appA/`).
 
 AWS Braket 은 `bash env/setup.sh --hardware` 뒤 `python env/run_braket.py --local` 부터. QPU 는 유료다(작업당 $0.30 + 샷당 요금).
 
-장치 스크립트는 SDK 문서와 대조해 썼지만 실행해 본 적이 없다. `--local`·`fake` 에서 오류가 나면 그것부터 고친다.
+IBM 경로(`run_ibm.py`, `ch14_submit.py`)는 2026-11-11 qiskit-ibm-runtime 0.52.0 으로 실기까지 실행했다. Braket 경로는 아직 실행하지 않았다.
 
 ## 다른 곳에서 열기
 
