@@ -35,6 +35,7 @@ NAMES = ["ghz5", "bv1011", "grover101", "qpe_t"]
 _pred = load("ch14/ch14_pred.json")                      # ch14_hardware.py 가 남긴 예측값(반올림하지 않은 값)
 PRED = _pred["success"]
 PRED_HVA, PRED_HVA_NORO, E_HVA_IDEAL = _pred["hva"]["noisy"], _pred["hva"]["noisy_no_readout"], _pred["hva"]["ideal"]
+PRED_NORO, RO_MODEL, CZ_PRED = _pred["success_no_readout"], _pred["readout_error_model"], _pred["cz"]      # 판독 오류를 끈 14장 예측, 모형의 평균 판독 오류
 assert [round(PRED[k], 3) for k in NAMES] == [0.918, 0.925, 0.759, 0.881] and round(PRED_HVA, 4) == -4.4329, "14장 예측이 바뀌었다 — 본문 대조 필요"
 th = np.arcsin(1 / np.sqrt(8)); P_GROVER = np.sin(5 * th) ** 2
 IDEAL = {"ghz5": {"00000": .5, "11111": .5}, "bv1011": {"1011": 1.0}, "qpe_t": {"001": 1.0},
@@ -65,7 +66,7 @@ for k in NAMES:
     p, n = norm(real["jobs"][k]["counts"]); pf, _ = norm(fake["jobs"][k]["counts"])
     s = sum(p.get(g, 0) for g in GOOD[k]); sf = sum(pf.get(g, 0) for g in GOOD[k])
     cz = sum(1 for g in isa[SJ]["pubs"][NAMES.index(k)] if g[0] == "cz")
-    meas[k] = dict(p=p, n=n, s=s)
+    meas[k] = dict(p=p, n=n, s=s, fake=sf)
     print(f"    {k:10s} CZ {cz:3d} | 예측 {PRED[k]:.3f} | fake {sf:.4f} | 실측 {s:.4f} ± {np.sqrt(s * (1 - s) / n):.4f} "
           f"(실측−예측 {100 * (s - PRED[k]):+.1f}%p) | 실측 TVD {tvd(p, IDEAL[k]):.4f}")
 for k in NAMES:
@@ -176,7 +177,7 @@ print(f"\nA3) 당일 보정값 재현 (마지막 보정 갱신 last_update_date 
 czs = {k: [v for kk, v in cal["gates"].items() if kk.startswith("cz")] for k in ["all"]}["all"]
 ro = [v["readout_error"] for v in cal["qubits"].values()]
 print(f"    이 작업에 쓰인 연결의 CZ 오류 {min(czs):.2e} ~ {max(czs):.2e} (14장 중앙값 3.0e-03), 큐비트 {len(ro)}개의 판독 오류 {min(ro):.4f} ~ {max(ro):.4f} (14장 평균 0.013)")
-rep = {}
+rep = {}; REP_S = {}
 for i, k in enumerate(NAMES):
     g = isa[SJ]["pubs"][i]
     p0 = replay(g, cal, noisy=False)
@@ -187,6 +188,7 @@ for i, k in enumerate(NAMES):
     rep[k] = pn; s, n = meas[k]["s"], meas[k]["n"]
     print(f"    {k:10s} 이상 {s0:.4f} | 재현 {sn:.4f} (판독 제외 {sr:.4f}) | 실측 {s:.4f} | 실측−재현 {100 * (s - sn):+.1f}%p = {(s - sn) / np.sqrt(s * (1 - s) / n):+.1f}σ(샷 잡음만)")
     sg = sum(replay(g, cal, gate_relax=False).get(b, 0) for b in GOOD[k])
+    REP_S[k] = (s0, sn, sg, sr)
     print(f"      변형(게이트 중 T1·T2 를 r 에 포함된 것으로 봄): 재현 {sg:.4f} → 실측−재현 {100 * (s - sg):+.1f}%p = {(s - sg) / np.sqrt(s * (1 - s) / n):+.1f}σ(샷 잡음만)")
 g_ghz = rep["ghz5"]; q4flip = g_ghz.get("01111", 0) + g_ghz.get("10000", 0)
 q4m = meas['ghz5']['p'].get('01111', 0) + meas['ghz5']['p'].get('10000', 0)
@@ -304,5 +306,84 @@ print(f"\nA5) HVA — 물리 사슬 {chain}, CZ 6 | 이상 {e0:.4f} | 당일 보
 en_e = energy(calh, init_exc={anc[0]: e_fit})
 print(f"    BV 에서 맞춘 e = {e_fit:.4f} 를 큐비트 {anc[0]} 에 넣은 재현 {en_e:.4f} → 실측−재현 {ev - en_e:+.3f} = {(ev - en_e) / sd:+.1f}σ (e 없이 {(ev - en) / sd:+.1f}σ)")
 print(f"    판독 오류 몫(재현 안에서): 전체 {enr - en:+.3f} 중 큐비트 3 {en_no3 - en:+.3f}")
+print(f"    손실의 분해(이상 − 실측 = {ev - e0:.3f}): 재현 모형 안의 큐비트 {anc[0]} 판독 오류 몫 {en - en_no3:.3f}, e 를 넣으면 더 설명되는 몫 {en_e - en:.3f} (맞춘 e 는 확인되지 않은 가설이다)")
+
+
+def end1(gates, cal_, q, qs_, **kw):
+    """끝에서 큐비트 q 가 |1⟩ 일 확률(판독 오류 없이)."""
+    return Replay(qs_, cal_, readout=False, **kw).run(gates).dist([(q, 0)]).get("1", 0.0)
+
+
+def energy_e(ez, ex):
+    """기저마다 다른 초기 들뜸(큐비트 3)을 넣은 ⟨H⟩."""
+    e = 0.0
+    for basis, e_init in (("Z", ez), ("X", ex)):
+        d = Replay(set(chain), calh, init_exc=({anc[0]: e_init} if e_init else None)).run(hva_gates(basis)).dist(mh)
+        for s_, v in d.items():
+            z = [1 - 2 * int(s_[len(s_) - 1 - i]) for i in range(4)]
+            e += v * (-sum(z[i] * z[i + 1] for i in range(3)) if basis == "Z" else -sum(z))
+    return e
+
+
+# 같은 e 를 두 기저에 넣는 것은 '직전 회로와 무관하게 들떠서 시작한다'는 가정이다. 직전 회로의 들뜸이 남는 것(잔류)이라면 기저마다 다르다.
+f_bv = e_fit / end1(gb, cal, anc[0], qs, init_exc={anc[0]: e_fit})                    # BV: 끝에서 |1⟩ 이던 것 가운데 남는 비율(잔류 가정)
+endZ = lambda e_: end1(hva_gates("Z"), calh, anc[0], set(chain), init_exc=({anc[0]: e_} if e_ else None))
+endX = lambda e_: end1(hva_gates("X"), calh, anc[0], set(chain), init_exc=({anc[0]: e_} if e_ else None))
+ez = ex = e_fit
+for _ in range(100): ez, ex = f_bv * endZ(ez), f_bv * endX(ex)                        # 같은 기저의 회로가 연달아 돈 경우
+e_same = energy_e(ez, ex); e_same_pair = (ez, ex)
+ez = ex = e_fit
+for _ in range(100): ez, ex = f_bv * endX(ex), f_bv * endZ(ez)                        # 두 기저의 회로가 번갈아 돈 경우
+e_alt = energy_e(ez, ex); e_alt_pair = (ez, ex)
+assert abs(energy_e(e_fit, e_fit) - en_e) < 1e-9 and abs(energy_e(0, 0) - en) < 1e-9
+print(f"    3번 큐비트가 끝에서 |1⟩ 일 확률: Z 기저 회로 {endZ(0):.3f}, X 기저 회로 {endX(0):.3f}; BV 에서 잔류 비율 f = {f_bv:.4f} (잔류 가정에서)")
+print(f"    가설별 HVA: 직전 회로와 무관(e 를 두 기저에 똑같이) {en_e:.4f} → {(ev - en_e) / sd:+.1f}σ | 잔류·같은 기저 연속 (e = {e_same_pair[0]:.4f}, {e_same_pair[1]:.4f}) {e_same:.4f} → {(ev - e_same) / sd:+.1f}σ "
+      f"| 잔류·기저 교대 (e = {e_alt_pair[0]:.4f}, {e_alt_pair[1]:.4f}) {e_alt:.4f} → {(ev - e_alt) / sd:+.1f}σ | 측정된 큐비트에는 잔류 없음(e = 0) {en:.4f} → {(ev - en) / sd:+.1f}σ (σ 는 샷 잡음만)")
 print(f"    에너지 하강(|+⟩⁴ 의 −4 기준): 이상 {-4 - e0:.3f}, 재현 {-4 - en:.3f} ({(-4 - en) / (-4 - e0):.0%}), 실측 {-4 - ev:.3f} ({(-4 - ev) / (-4 - e0):.0%} ± {sd / abs(-4 - e0):.0%}), "
       f"fake {-4 - fake['jobs']['hva']['evs']:.3f} ({(-4 - fake['jobs']['hva']['evs']) / (-4 - e0):.0%})")
+
+# ---------------- A6 예측 · 실측 · 사후 확인값 병기 (14장 5절 표의 출처; 2026-11-12 결정) ----------------
+# 예측은 실행 전에 낸 값이고 고치지 않는다. 사후 확인값은 실측을 본 뒤에 만든 것이라 예측이 아니다.
+#   사후 ①: 실제 ISA 회로 + 그 시각의 큐비트별 보정값(A3)        사후 ②: ①에서 게이트 중 T1·T2 를 뺀 변형(이중 계산 점검)
+#   사후 ③: ①에 보조 큐비트의 초기 들뜸 e(BV 의 '0000' 에 맞춘 값)를 넣은 것 — 맞춘 값이므로 BV 의 0000 은 정의상 맞는다
+en_g = energy(calh, gate_relax=False)
+POST = {"note": "appA_qpu_runs.py 가 만든 병기 표(예측·실측·사후 확인값). 고치지 말고 스크립트를 다시 돌린다. 사후 값은 예측이 아니다.",
+        "success": {}, "hva": {}}
+print("\nA6) 예측 · 실측 · 사후 확인값 병기 — 예측과 fake 는 실행 전의 값 그대로, 사후 ①②③ 은 실측을 본 뒤의 계산")
+print("    회로         예측(14장)  fake(실행 전)  실측 ± 표준오차      사후 ① 당일 보정 재현   사후 ② 게이트 중 열완화 제외   사후 ③ ① + 보조 큐비트 e    실측 − (예측 | fake | ① | ② | ③) %p")
+for k in NAMES:
+    s, n = meas[k]["s"], meas[k]["n"]; se = float(np.sqrt(s * (1 - s) / n)); s0, sn, sg, sr = REP_S[k]
+    s3 = s_fit if k == "bv1011" else None
+    POST["success"][k] = {"ideal": s0, "pred": PRED[k], "fake": meas[k]["fake"], "meas": s, "meas_se": se, "post_calib": sn,
+                          "post_no_gate_relax": sg, "post_init_exc": s3, "pred_no_readout": PRED_NORO[k], "post_calib_no_readout": sr}
+    d = [100 * (s - v) for v in (PRED[k], meas[k]["fake"], sn, sg)] + ([100 * (s - s3)] if s3 is not None else [])
+    print(f"    {k:10s}   {PRED[k]:.3f}       {meas[k]['fake']:.4f}         {s:.4f} ± {se:.4f}      {sn:.4f}                  {sg:.4f}                         "
+          f"{'—     ' if s3 is None else format(s3, '.4f')}                      " + " | ".join(f"{x:+.1f}" for x in d))
+POST["hva"] = {"ideal": e0, "pred": PRED_HVA, "fake_no_readout": fake["jobs"]["hva"]["evs"], "meas": ev, "meas_se": sd, "post_calib": en,
+               "post_no_gate_relax": en_g, "post_init_exc": en_e}
+print(f"    hva ⟨H⟩      {PRED_HVA:.3f}      {fake['jobs']['hva']['evs']:.4f}*       {ev:.4f} ± {sd:.4f}     {en:.4f}                 {en_g:.4f}                        {en_e:.4f}"
+      f"                     " + " | ".join(f"{ev - v:+.3f} ({(ev - v) / sd:+.1f}σ)" for v in (PRED_HVA, en, en_g, en_e)) + "   (* fake 의 HVA 는 판독 오류가 없는 값)")
+KEYS = ("pred", "fake", "post_calib", "post_no_gate_relax")
+_diff = lambda key, names=NAMES: np.array([POST["success"][k]["meas"] - POST["success"][k][key] for k in names])
+_ad = lambda key, names=NAMES: float(np.mean(np.abs(_diff(key, names))))
+se_mean = float(np.sqrt(sum(POST["success"][k]["meas_se"] ** 2 for k in NAMES)) / len(NAMES))
+NO_BV = [k for k in NAMES if k != "bv1011"]
+print(f"    성공 확률 네 개의 평균 |실측 − 값|: 예측 {100 * _ad('pred'):.1f}%p, fake {100 * _ad('fake'):.1f}%p, 사후 ① {100 * _ad('post_calib'):.1f}%p, 사후 ② {100 * _ad('post_no_gate_relax'):.1f}%p "
+      f"(실측의 샷 잡음만으로 이 평균은 ±{100 * se_mean:.2f}%p 움직인다)")
+print(f"    BV 를 뺀 세 개의 평균: 예측 {100 * _ad('pred', NO_BV):.1f}%p, fake {100 * _ad('fake', NO_BV):.1f}%p, 사후 ① {100 * _ad('post_calib', NO_BV):.1f}%p, 사후 ② {100 * _ad('post_no_gate_relax', NO_BV):.1f}%p")
+print(f"    부호를 둔 평균(실측 − 값): 예측 {100 * _diff('pred').mean():+.1f}%p, fake {100 * _diff('fake').mean():+.1f}%p, 사후 ① {100 * _diff('post_calib').mean():+.1f}%p, 사후 ② {100 * _diff('post_no_gate_relax').mean():+.1f}%p; "
+      f"실측보다 낙관적인 것(값 > 실측): 사후 ① {int((_diff('post_calib') < 0).sum())}/4, 사후 ② {int((_diff('post_no_gate_relax') < 0).sum())}/4")
+print("    예측과 사후 ① 의 차는 어디서 오는가 — 판독 오류를 끈 값과 그날 측정에 쓰인 큐비트의 평균 판독 오류:")
+for i, k in enumerate(NAMES):
+    mq = [g[1][0] for g in isa[SJ]["pubs"][i] if g[0] == "measure"]; ro_day = float(np.mean([cal["qubits"][str(q)]["readout_error"] for q in mq]))
+    P_ = POST["success"][k]; POST["success"][k]["readout_error_day_mean"] = ro_day
+    print(f"      {k:10s} ① − 예측 {100 * (P_['post_calib'] - P_['pred']):+.2f}%p | 판독 오류를 끄면 예측 {P_['pred_no_readout']:.4f}, ① {P_['post_calib_no_readout']:.4f} (차 {100 * (P_['post_calib_no_readout'] - P_['pred_no_readout']):+.2f}%p) "
+          f"| 판독 오류로 잃는 몫: 예측 {100 * (P_['pred_no_readout'] - P_['pred']):.2f}%p, ① {100 * (P_['post_calib_no_readout'] - P_['post_calib']):.2f}%p | 평균 판독 오류: 모형 {RO_MODEL:.4f}, 그날 {ro_day:.4f} | CZ: 14장 가정 대 실제 {'·'.join(str(x) for x in (CZ_PRED[k], sum(1 for g in isa[SJ]['pubs'][i] if g[0] == 'cz')))}")
+print(f"    읽는 법: ① 은 '어느 큐비트·어느 날'을 넣은 값, ② 는 ① 에서 게이트 중 열완화를 뺀 값, ③ 은 맞춘 매개변수 하나(e = {e_fit:.4f})를 쓴 값이다. "
+      "뒤로 갈수록 실측을 보고 만든 값이고, 네 회로의 평균 차는 줄지 않았다(③ 을 쓴 BV 와 HVA 만 줄었다).")
+assert [round(POST["success"][k]["post_calib"], 4) for k in NAMES] == [0.9552, 0.9612, 0.7785, 0.9321]
+assert [round(POST["success"][k]["post_no_gate_relax"], 4) for k in NAMES] == [0.9591, 0.9635, 0.8090, 0.9449]
+assert _ad("pred") < _ad("post_no_gate_relax") < _ad("post_calib") < _ad("fake"), "4.1절의 읽는 법이 전제하는 순서"
+assert _ad("post_no_gate_relax", NO_BV) < _ad("post_calib", NO_BV) < _ad("pred", NO_BV), "BV 를 빼면 순서가 뒤집힌다(4.1절)"
+if __name__ == "__main__":                              # appA_bv_confirm.py 가 이 모듈을 불러올 때는 파일을 다시 쓰지 않는다
+    (ROOT / "appA" / "appA_posthoc.json").write_text(json.dumps(POST, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

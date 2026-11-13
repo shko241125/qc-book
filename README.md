@@ -18,7 +18,7 @@ python env/smoke_test.py          # 표에 "통과"가 줄줄이 나오면 끝
 
 ```bash
 bash env/test_all.sh                                   # 모든 장·부록의 numpy 스크립트(SDK 불필요, 10~15분). SDK 스크립트까지는 --sdk
-python env/extract_snippets.py && python env/run_snippets.py     # 본문의 SDK 스니펫 39개 → runs/snippets-날짜.md
+python env/extract_snippets.py && python env/run_snippets.py     # 본문의 SDK 스니펫 41개 → runs/snippets-날짜.md
 ```
 
 ## 실제 장치에서 돌리기 (IBM Quantum, 무료 Open 플랜)

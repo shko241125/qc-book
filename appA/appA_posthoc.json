@@ -1,0 +1,67 @@
+{
+ "note": "appA_qpu_runs.py 가 만든 병기 표(예측·실측·사후 확인값). 고치지 말고 스크립트를 다시 돌린다. 사후 값은 예측이 아니다.",
+ "success": {
+  "ghz5": {
+   "ideal": 1.0,
+   "pred": 0.9181445171405862,
+   "fake": 0.9685,
+   "meas": 0.9205,
+   "meas_se": 0.004277258175513842,
+   "post_calib": 0.9551763254724992,
+   "post_no_gate_relax": 0.9591328970286702,
+   "post_init_exc": null,
+   "pred_no_readout": 0.9799216272093509,
+   "post_calib_no_readout": 0.979723118300871,
+   "readout_error_day_mean": 0.005078125
+  },
+  "bv1011": {
+   "ideal": 0.9999999999999999,
+   "pred": 0.92454865874263,
+   "fake": 0.97825,
+   "meas": 0.88875,
+   "meas_se": 0.004971756166084575,
+   "post_calib": 0.9612159125242794,
+   "post_no_gate_relax": 0.9634548850747718,
+   "post_init_exc": 0.9115162193048738,
+   "pred_no_readout": 0.9800362412504697,
+   "post_calib_no_readout": 0.9889700017003631,
+   "readout_error_day_mean": 0.004638671875
+  },
+  "grover101": {
+   "ideal": 0.9453125000000001,
+   "pred": 0.759025401196966,
+   "fake": 0.87425,
+   "meas": 0.81375,
+   "meas_se": 0.006155504396473128,
+   "post_calib": 0.7784925011262621,
+   "post_no_gate_relax": 0.8090361139971914,
+   "post_init_exc": null,
+   "pred_no_readout": 0.7906531231487512,
+   "post_calib_no_readout": 0.7913467652879195,
+   "readout_error_day_mean": 0.00390625
+  },
+  "qpe_t": {
+   "ideal": 0.9999999999999997,
+   "pred": 0.880934446696055,
+   "fake": 0.953,
+   "meas": 0.92225,
+   "meas_se": 0.004233938400000642,
+   "post_calib": 0.9321256278073009,
+   "post_no_gate_relax": 0.944877296911416,
+   "post_init_exc": null,
+   "pred_no_readout": 0.9126850869918555,
+   "post_calib_no_readout": 0.9392469564109355,
+   "readout_error_day_mean": 0.00390625
+  }
+ },
+ "hva": {
+  "ideal": -4.64624884549196,
+  "pred": -4.43285627132694,
+  "fake_no_readout": -4.580728473623228,
+  "meas": -4.3224,
+  "meas_se": 0.03895361919000595,
+  "post_calib": -4.4930164066439096,
+  "post_no_gate_relax": -4.501545619220103,
+  "post_init_exc": -4.3774305838373015
+ }
+}

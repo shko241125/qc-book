@@ -1,6 +1,6 @@
 """fetch_ibm_job.py — 끝난 IBM 작업에서 '실제로 돈 회로'와 그 시각의 보정값을 받아 JSON 으로 남긴다(QPU 를 쓰지 않는다).
 
-  python env/fetch_ibm_job.py <job id> [<job id> ...] --out runs/<이름>.json
+  python env/fetch_ibm_job.py <job id> [<job id> ...] --out runs/<이름>.json [--bitstrings]
 
 남기는 것: 작업마다 장치·생성 시각·PUB 별 게이트 목록(이름, 물리 큐비트, 각도) — 트랜스파일러가 만든 ISA 회로 그대로.
 그리고 작업 생성 시각 직전의 보정값(backend.properties(datetime=...)): 쓰인 큐비트의 T1·T2·판독 오류,
@@ -8,6 +8,8 @@
 작업 입력의 구조(inputs['quantum_program'].items[i].circuit)는 qiskit-ibm-runtime 0.52 의 클라이언트 쪽 프리미티브 기준이다.
 2026-11-11 에 실행한 것은 이전 판이다. 그 뒤 더한 것(항목별 측정 시각, init_error, 게이트 길이, Sampler counts, 끝나지 않은 작업 건너뛰기,
 이미 있는 파일 거절 — 검토 R11)은 작성됨, 미실행이다. 추가 항목은 받지 못하면 None 으로 남고 기존 항목은 그대로다.
+--bitstrings(검토 R14, 작성됨·미실행): Sampler 작업의 샷별 비트열도 남긴다(PUB 마다 샷 수만큼의 문자열). 오답이 한때에 몰렸는지 볼 때 쓴다.
+배열의 순서가 실행 순서라는 보장은 확인하지 못했다.
 """
 import argparse
 import json
@@ -65,7 +67,7 @@ def calib(props, qubits, gates):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("job_ids", nargs="+"); ap.add_argument("--out", required=True)
+    ap.add_argument("job_ids", nargs="+"); ap.add_argument("--out", required=True); ap.add_argument("--bitstrings", action="store_true")
     a = ap.parse_args()
     p = (ROOT / a.out).resolve()
     if p.exists():
@@ -97,6 +99,11 @@ def main():
                 out[jid]["counts"] = [pub.join_data().get_counts() for pub in res]
             except Exception as e:
                 out[jid]["counts"] = f"받지 못함: {type(e).__name__}: {e}"
+            if a.bitstrings:
+                try:
+                    out[jid]["bitstrings"] = [list(pub.join_data().get_bitstrings()) for pub in res]
+                except Exception as e:
+                    out[jid]["bitstrings"] = f"받지 못함: {type(e).__name__}: {str(e)[:200]}"
         print(f"{jid}: {be.name}, PUB {len(pubs)}개, 큐비트 {sorted(used)}, 마지막 보정 갱신 {props.last_update_date}")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

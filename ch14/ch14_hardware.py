@@ -327,6 +327,7 @@ for name, fn in CIRCS:
     for kw in (dict(rb_convert=False), dict(idle=False), dict(readout=False)):
         with noise_set(**kw): row.append(success(fn)[0])
     print(f"   {name:22s}: " + " | ".join(f"{v:.3f}" for v in row))
+    results[name]["succ_noro"] = row[3]            # 판독 오류를 끈 예측 — 부록 A 4.1절이 당일 보정 재현과 견준다
 
 # HVA 에너지
 build0 = circ_hva(False)
@@ -408,6 +409,9 @@ _here = pathlib.Path(__file__).resolve().parent
 (_here / "ch14_pred.json").write_text(json.dumps(
     {"note": "ch14_hardware.py 가 만든 예측값(공개 중앙값 모형). 고치지 말고 스크립트를 다시 돌린다.",
      "success": dict(zip(["ghz5", "bv1011", "grover101", "qpe_t"], [float(results[c[0]]["succ1"]) for c in CIRCS])),
+     "success_no_readout": dict(zip(["ghz5", "bv1011", "grover101", "qpe_t"], [float(results[c[0]]["succ_noro"]) for c in CIRCS])),
+     "readout_error_model": float((NOISE["eps01"] + NOISE["eps10"]) / 2),
+     "cz": dict(zip(["ghz5", "bv1011", "grover101", "qpe_t"], [int(results[c[0]]["cz"]) for c in CIRCS])),
      "hva": {"ideal": float(e_ideal), "noisy": float(results["HVA"]["e_noisy"]), "noisy_no_readout": float(e_noro)}},
     ensure_ascii=False, indent=1), encoding="utf-8")
 # ch14/ch14_record_real.json 은 다음 real --yes 가 덮어쓰므로 5절 표의 출처로 쓰지 않는다. 고정 사본이 없으면 여기서 멈춘다.
