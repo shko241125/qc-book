@@ -140,22 +140,28 @@ def qsp_poly(phis, x):
 xs = np.linspace(-1, 1, 401)
 
 
-def fit_qsp(f_target, d):
+def fit_qsp(f_target, d, max_starts=20):
     """Re P(x) = f(x) (f 는 x 의 함수, 차수 d·패리티 d 인 다항식) 를 만족하는 위상 φ_0..φ_d 를 찾는다.
     Dong–Meng–Whaley–Lin 2021: 대칭 위상(φ_k = φ_{d−k}), 초기값 (π/4, 0, …, 0, π/4), 양의 체비쇼프 점에서 Levenberg–Marquardt.
-    점 수 = 미지수 수로 먼저 풀고, 수렴이 덜 되면 점을 두 배로 늘려 다시 푼다."""
+    점 수 = 미지수 수로 먼저 풀고, 수렴이 덜 되면 점을 두 배로 늘려 다시 푼다.
+    그래도 안 되면 시작점을 흔들어(시드 고정 난수, 크기 0.1) 다시 푼다 — 시작점 하나의 LM 은 국소 최소에 멈출 수 있고,
+    어디서 멈추는지가 반올림 끝자리에 따라 갈린다(2026-11-13 확인: 같은 numpy·scipy 에서도 CPU 에 따라 d = 11 또는 21 이 잔차 10⁻³~10⁻² 에 멈췄다).
+    수렴 판정(전 구간 최대 오차 < 10⁻¹²)은 그대로다."""
     nfree = (d + 2) // 2
     full = lambda v: np.concatenate([v, v[::-1][(d + 1) % 2:]])
+    xx = np.linspace(-1, 1, 2001)
+    rng = np.random.default_rng(16)                    # 흔든 시작점의 순서를 고정한다
     best = None
-    for k in (nfree, 2 * nfree):
-        nodes = cheb_nodes_pos(k); fv = f_target(nodes)
+    for s in range(max_starts):
         v0 = np.zeros(nfree); v0[0] = np.pi / 4
-        sol = least_squares(lambda v: qsp_poly(full(v), nodes).real - fv, v0, method="lm",
-                            xtol=1e-15, ftol=1e-15, gtol=1e-15, max_nfev=20000)
-        xx = np.linspace(-1, 1, 2001)
-        err = np.abs(qsp_poly(full(sol.x), xx).real - f_target(xx)).max()
-        if best is None or err < best[1]: best = (full(sol.x), err)
-        if err < 1e-12: break
+        if s > 0: v0 = v0 + 0.1 * rng.standard_normal(nfree)
+        for k in (nfree, 2 * nfree):
+            nodes = cheb_nodes_pos(k); fv = f_target(nodes)
+            sol = least_squares(lambda v: qsp_poly(full(v), nodes).real - fv, v0, method="lm",
+                                xtol=1e-15, ftol=1e-15, gtol=1e-15, max_nfev=20000)
+            err = np.abs(qsp_poly(full(sol.x), xx).real - f_target(xx)).max()
+            if best is None or err < best[1]: best = (full(sol.x), err)
+            if err < 1e-12: return best
     return best
 
 
@@ -347,11 +353,13 @@ for jq in reversed(range(m)):
 p_noswap = np.sum(np.abs(T2.reshape(M, dA)) ** 2, axis=1)
 p_anal = qae_dist(theta, m)
 print(f"   게이트 수준(3큐비트 A, m = {m}, 제어 Q^(2^(m−1−j)) + 교과서 역 QFT): a = {a_true:.4f}, θ = {theta:.4f}; 해석식과 최대 차 {np.abs(p_circ - p_anal).max():.1e}")
-print(f"   역 QFT 의 스왑을 빼면: 해석식과 최대 차 {np.abs(p_noswap - p_anal).max():.2f}, 최빈 y = {np.argmax(p_noswap)} (비트 반전이 아니라 분포가 망가짐)")
+# 스왑 없는 분포는 최빈값이 둘(같은 확률)이라 argmax 는 반올림에 따라 둘 중 하나를 고른다(2026-11-13 확인) — 1e-12 안의 최빈값을 모두 적는다
+modes_noswap = [int(y) for y in np.flatnonzero(p_noswap >= p_noswap.max() - 1e-12)]
+print(f"   역 QFT 의 스왑을 빼면: 해석식과 최대 차 {np.abs(p_noswap - p_anal).max():.2f}, 최빈 y = {'·'.join(map(str, modes_noswap))} (비트 반전이 아니라 분포가 망가짐)")
 yb = np.argmax(p_anal); print(f"   최빈 출력 y = {yb} 와 거울상 y = {M - yb} (같은 â = sin²(πy/M) = {np.sin(np.pi*yb/M)**2:.4f}), 두 값의 확률 합 {p_anal[yb] + p_anal[M - yb]:.3f}")
 assert m == 5 and abs(a_true - 0.0819) < 5e-5 and abs(theta - 0.2903) < 5e-5, "5절 (4) 게이트 수준 검산: a = 0.0819, θ = 0.2903, m = 5"
 assert np.abs(p_circ - p_anal).max() < 1e-12, "5절 (4): 게이트별 QPE 분포 = 해석식 (10⁻¹⁶ 수준)"
-assert abs(np.abs(p_noswap - p_anal).max() - 0.50) < 5e-3 and np.argmax(p_noswap) == 12, "5절 (4): 역 QFT 의 SWAP 을 빼면 최대 차 0.50, 최빈 y = 12"
+assert abs(np.abs(p_noswap - p_anal).max() - 0.50) < 5e-3 and modes_noswap == [12, 20], "5절 (4): 역 QFT 의 SWAP 을 빼면 최대 차 0.50, 최빈 y = 12·20"
 assert abs(p_noswap[12] - 0.24) < 5e-3 and abs(p_noswap[20] - 0.24) < 5e-3, "5절 (4): SWAP 없이 최빈 출력 y = 12·20 (각 0.24)"
 assert (yb, M - yb) == (3, 29) and abs(np.sin(np.pi * yb / M) ** 2 - 0.0843) < 5e-5 and abs(p_anal[yb] + p_anal[M - yb] - 0.994) < 5e-4, \
     "5절 (4): 최빈 y = 3 과 거울상 y = 29 (â = 0.0843), 확률 합 0.994"

@@ -82,9 +82,10 @@ print(f"    보조 큐비트 {ANC}, 보조와 CZ 하는 데이터 큐비트(순�
 ideal = {}
 for k, g in {**JOB1, "P2": P2, "P4": P4, "PM": PM}.items():
     d, end1 = run(g, noisy=False)
-    top = max(d, key=d.get); ideal[k] = top
+    # 동점(P4 는 보조 비트가 정확히 반반)이면 max 가 계산기마다 다른 쪽을 고르므로(2026-11-13: 기준 환경 11011, 맥·리눅스 01011) 1e-12 안의 출력을 사전순으로 모두 적고 첫째를 쓴다
+    tops = sorted(s_ for s_ in d if d[s_] >= max(d.values()) - 1e-12); top = tops[0]; ideal[k] = top
     print(f"    {k:3s} cz {sum(1 for x in g if x[0] == 'cz')}, sx·x {sum(1 for x in g if x[0] in ('sx', 'x'))}, reset {sum(1 for x in g if x[0] == 'reset')}, "
-          f"측정 {sum(1 for x in g if x[0] == 'measure')} | 잡음 없는 출력 {top} (확률 {d[top]:.4f}) | 끝에서 보조가 |1⟩ 일 확률 {end1:.3f}")
+          f"측정 {sum(1 for x in g if x[0] == 'measure')} | 잡음 없는 출력 {'·'.join(tops)} ({'각 ' if len(tops) > 1 else ''}확률 {d[top]:.4f}) | 끝에서 보조가 |1⟩ 일 확률 {end1:.3f}")
 GOODS = ideal["P0"]
 assert abs(run(P0, noisy=False)[0][GOODS] - 1) < 1e-9 and abs(run(P1, noisy=False)[0][GOODS] - 1) < 1e-9
 assert abs(run(P1, noisy=False)[1]) < 1e-12 and abs(run(P0, noisy=False)[1] - 0.5) < 1e-12

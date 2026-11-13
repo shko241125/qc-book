@@ -657,7 +657,11 @@ assert [round(ROWS[(N, k)]["tot"]) for N in SIZES for k in KAPPAS] == [71, 214, 
 assert [round(ROWS[(N, k)]["cgcost"]) for N in SIZES for k in KAPPAS] == [303, 444, 592, 651, 725, 1311, 2056, 2682, 3308, 3785, 5317, 8862, 12660, 17724, 24560], "5절 (3): CG nnz × 반복"
 assert np.allclose([ROWS[(N, k)]["ps"] for N in SIZES for k in KAPPAS],
                    [0.12482, 0.05686, 0.02680, 0.02820, 0.01432, 0.11960, 0.05788, 0.02230, 0.01356, 0.00705, 0.11712, 0.05182, 0.02209, 0.00786, 0.00403], atol=6e-6), "5절 (3): p_s 평균"
-assert max(r_["s_err"] for r_ in ROWS.values()) < 7.5e-4 and max(r_["q_err"] for r_ in ROWS.values()) < 4e-14 and PS_AGREE < 2e-3, "5절 (3): 오차 상한"
+# QSVT − 다항식의 차는 차수 d 번의 곱에서 쌓인 반올림이라 끝자리가 계산기마다 다르다(2026-11-13: 기준 환경 3.8e-14, 맥 4.2e-14).
+# 상한은 배정밀도 ε × 최대 차수(2.2e-16 × 423 ≈ 9.4e-14)에서 잡은 1e-13 이다 — 본문은 "10⁻¹³ 미만(반올림 수준)"으로 적는다.
+Q_ERR_MAX = max(r_["q_err"] for r_ in ROWS.values())
+print(f"    오차 상한 점검: 해의 오차 최대 {max(r_['s_err'] for r_ in ROWS.values()):.2e}, QSVT − 다항식 최대 {Q_ERR_MAX:.1e} (ε·d_max = {np.finfo(float).eps * max(r_['d'] for r_ in ROWS.values()):.1e}), p_s 표본·공식 차 최대 {PS_AGREE:.2%}")
+assert max(r_["s_err"] for r_ in ROWS.values()) < 7.5e-4 and Q_ERR_MAX < 1e-13 and PS_AGREE < 2e-3, "5절 (3): 오차 상한"
 assert [round(EXACT[N][0], 2) for N in (16, 64, 256, 1024, 4096)] == [1.38, 1.58, 1.64, 1.69, 1.71], "5절 (4) 사후 확인: 기댓값으로 잰 지수"
 assert [round(v, 2) for v in ROB.values()] == [1.05, 1.05, 1.65, 1.64, 1.67, 1.64], "5절 (4): 판정의 견고성"
 assert [SDD[k][0] for k in KAPPAS] == [256, 238, 204, 204, 167], "7절: 대각 지배인 행의 수"

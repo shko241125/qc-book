@@ -135,7 +135,7 @@ f_, g_ = T_.cost_grad(th_, U_.conj().T); e_ = 1e-6
 gn_ = np.array([(T_.cost_grad(th_ + e_ * np.eye(T_.npar)[i], U_.conj().T)[0]
                  - T_.cost_grad(th_ - e_ * np.eye(T_.npar)[i], U_.conj().T)[0]) / (2 * e_) for i in range(T_.npar)])
 print(f"A0) 해석적 기울기 vs 중심차분 (3큐비트, 파라미터 {T_.npar}개): 최대 차 {np.abs(g_-gn_).max():.1e}")
-assert T_.npar == 27 and np.abs(g_ - gn_).max() < 1e-8, "4절: 해석적 기울기 = 중심차분 (파라미터 27개, 최대 차 4.8×10⁻¹¹ 수준)"
+assert T_.npar == 27 and np.abs(g_ - gn_).max() < 1e-8, "4절: 해석적 기울기 = 중심차분 (파라미터 27개, 최대 차 10⁻¹¹ 수준)"
 
 # A1. 2큐비트 표적: CNOT k개로 닿는 최소 비충실도
 SWAP = np.eye(4)[[0, 2, 1, 3]].astype(complex)
@@ -275,6 +275,9 @@ def make_pool(n, kind):
     return pool
 
 
+TIE_G = 1e-7
+
+
 def adapt(H, psi0, pool, E0, max_ops, gtol=1e-6, etol=1e-10):
     """ADAPT-VQE: (1) 풀 전체의 기울기 |∂E/∂θ_P|_{θ=0} = |⟨ψ|i[H,P]|ψ⟩|/… 측정, (2) 최대인 것을 붙임,
     (3) 모든 각도를 다시 최적화. 기울기 최대값 < gtol 이면 멈춘다."""
@@ -282,7 +285,9 @@ def adapt(H, psi0, pool, E0, max_ops, gtol=1e-6, etol=1e-10):
     while True:
         lam = H @ psi; E = np.real(np.vdot(psi, lam))
         grads = np.array([2 * np.real(np.vdot(lam, -0.5j * (P @ psi))) for _, P, _ in pool])
-        j = int(np.argmax(abs(grads))); gmax = abs(grads[j]); ngrad += len(pool)
+        # 동점 처리: 대칭인 후보들의 |기울기|는 앞 단계 BFGS(gtol 10⁻⁹)의 잔차만큼(10⁻¹³~10⁻¹⁰) 어긋나 argmax 가 계산기마다 다른 것을 고른다
+        # (2026-11-13 확인). 최댓값과 TIE_G 안이면 동점으로 보고 풀 순서의 첫째를 고른다. 실제로 다른 후보 사이의 간격은 10⁻⁴ 이상이다.
+        ag = np.abs(grads); gmax = ag.max(); j = int(np.flatnonzero(ag >= gmax - TIE_G)[0]); ngrad += len(pool)
         hist.append((len(chosen), E - E0, gmax, sum(pool[c][2] for c in chosen)))
         if gmax < gtol or E - E0 < etol or len(chosen) >= max_ops: break
         chosen.append(j); th = np.append(th, 0.0)
@@ -345,13 +350,15 @@ for n in (4, 6, 8):
     print(f"    {n}   {n*(n-1):4d}    {E0:.6f}   {str(first_below(hist,1e-3)):22s}  {str(first_below(hist,1e-6)):17s}  {str(first_below(hist,1e-8)):17s}"
           f"  ({hist[-1][0]}, {abs(hist[-1][1]):.1e})   풀 기울기 측정 {ngrad}회, 에너지·기울기 평가 {nfev}회")
     if n == 4: print("        n = 4에서 고른 순서:", " ".join(names))
-    if n == 4: assert names == "Y0Z1 Y2Z1 Y3Z2 Y3Z1 Y0Z2 Y0Z3 Y1Z3".split(), "5절 (B): n = 4 에서 고른 순서"
-    e0_md, b3_md, b6_md, b8_md, last_md, ng_md, nf_md = {4: (-4.758770, (6, 12), (7, 14), (7, 14), 7, 96, 83), 6: (-7.296230, (15, 30), (30, 60), (31, 62), 31, 960, 2091),
-                                                         8: (-9.837951, (40, 80), None, None, 60, 3416, 4980)}[n]
+    if n == 4: assert names == "Y0Z1 Y2Z1 Y3Z2 Y0Z2 Y3Z1 Y0Z3 Y1Z3".split(), "5절 (B): n = 4 에서 고른 순서"
+    # 에너지·기울기 평가 횟수(nfev)는 BFGS 의 경로가 반올림 끝자리에 따라 달라져 계산기마다 다르다(2026-11-13, 같은 numpy·scipy 로
+    # 맥·리눅스 arm64·리눅스 x86_64 에서 n = 6 이 1,936·2,077·2,014). 그래서 정확한 값은 대조하지 않고 아래 B3 뒤에서 본문의 어림(약 2천 번)과 대조한다.
+    e0_md, b3_md, b6_md, b8_md, last_md, ng_md = {4: (-4.758770, (6, 12), (7, 14), (7, 14), 7, 96), 6: (-7.296230, (15, 30), (30, 60), (31, 62), 31, 960),
+                                                  8: (-9.837951, (43, 86), None, None, 60, 3416)}[n]
     assert abs(E0 - e0_md) < 5e-7 and len(make_pool(n, "YZ")) == n * (n - 1) == {4: 12, 6: 30, 8: 56}[n], "5절 (B) ADAPT 표: E0, 풀 크기"
     assert (first_below(hist, 1e-3), first_below(hist, 1e-6), first_below(hist, 1e-8), hist[-1][0]) == (b3_md, b6_md, b8_md, last_md), "5절 (B) ADAPT 표: 오차 10⁻³·10⁻⁶·10⁻⁸ 까지 게이트(CNOT)"
-    assert (ngrad, nfev) == (ng_md, nf_md), "5절 (B) ADAPT 표: 풀 기울기 측정 횟수, 에너지·기울기 평가 횟수"
-    assert _sig(abs(hist[-1][1]), 4.8e-5) if n == 8 else abs(hist[-1][1]) < 1e-10, "5절 (B)·1절: n = 8 은 게이트 60개에서 4.8×10⁻⁵, n = 4·6 은 바닥상태 도달"
+    assert ngrad == ng_md, "5절 (B) ADAPT 표: 풀 기울기 측정 횟수"
+    assert _sig(abs(hist[-1][1]), 3.9e-5) if n == 8 else abs(hist[-1][1]) < 1e-10, "5절 (B)·1절: n = 8 은 게이트 60개에서 3.9×10⁻⁵, n = 4·6 은 바닥상태 도달"
 
 print("\nB2) 풀과 시작 상태에 따른 함정 (n = 4, 6): 멈춘 뒤의 오차와 최대 기울기")
 print("    n  시작      풀                    풀 크기  붙인 게이트  멈춘 오차 E−E0   최대 기울기   설명되는 값")
@@ -393,13 +400,17 @@ for n in (4, 6):
         hva_pts[n].append((2 * p, max(err, 1e-16), 2 * p * (n - 1)))
         print(f"    {n}   {p:2d}     {2*p:3d}     {2*p*(n-1):3d}      {err:9.2e}            {frac:4.2f}                         {tot}")
         if (n, p) in ((4, 3), (4, 4), (6, 6), (6, 8), (6, 9)):                       # 5절 (B) HVA 표의 다섯 줄: (파라미터, CNOT, 최선 오차, 2배 이내 비율)
+            # n = 6 의 p = 8·9 는 시작점 21개가 빠지는 국소 최소가 계산기마다 다르다(2026-11-13: p = 8 최선 오차 5.0×10⁻⁵·2.0×10⁻⁴·5.0×10⁻⁵·5.9×10⁻⁵,
+            # 비율 0.05~0.10, p = 9 비율 0.19~0.38 — 맥·리눅스 arm64·리눅스 x86_64·기준 환경). 그 두 줄은 본문의 "수준"(p = 8 은 10⁻⁵~10⁻⁴, p = 9 는 바닥 도달)만 대조한다.
             par_md, cx_md, err_md, frac_md = {(4, 3): (6, 18, 1.56e-4, 0.24), (4, 4): (8, 24, None, 0.71), (6, 6): (12, 60, 2.26e-3, 0.19),
-                                              (6, 8): (16, 80, 5.90e-5, 0.05), (6, 9): (18, 90, None, 0.38)}[(n, p)]
-            assert (2 * p, 2 * p * (n - 1)) == (par_md, cx_md) and abs(frac - frac_md) < 5e-3, "5절 (B) HVA 표: 파라미터, CNOT, 최선의 2배 이내로 간 시작점 비율"
-            assert err < 1e-9 if err_md is None else _sig(err, err_md, 3), "5절 (B) HVA 표: 최선 오차 (1.6×10⁻⁴, 2.3×10⁻³, 5.9×10⁻⁵; p = 4·9 는 10⁻¹³ 수준)"
+                                              (6, 8): (16, 80, "1e-5~1e-4", None), (6, 9): (18, 90, None, None)}[(n, p)]
+            assert (2 * p, 2 * p * (n - 1)) == (par_md, cx_md) and (frac_md is None or abs(frac - frac_md) < 5e-3), "5절 (B) HVA 표: 파라미터, CNOT, 최선의 2배 이내로 간 시작점 비율"
+            assert (err < 1e-9 if err_md is None else 1e-5 <= err < 1e-3 if isinstance(err_md, str) else _sig(err, err_md, 3)), \
+                "5절 (B) HVA 표: 최선 오차 (1.6×10⁻⁴, 2.3×10⁻³; p = 8 은 10⁻⁵~10⁻⁴ 수준; p = 4·9 는 10⁻¹³ 수준)"
         if err < 1e-9: break
 assert [hva_pts[4][-1][0] // 2, hva_pts[6][-1][0] // 2] == [4, 9], "5절 (B): 오차가 10⁻⁸ 아래로 가는 것은 n = 4 에서 p = 4, n = 6 에서 p = 9 부터"
-assert tot == 60622, "5절 (B): HVA n = 6 의 p = 1~9 에 에너지·기울기 평가 60,622번"
+print(f"    탐색 비용(n = 6): HVA 의 p = 1~9 누적 평가 {tot:,}번, ADAPT 평가 {adapt_cost[6][1]:,}번·풀 기울기 측정 {adapt_cost[6][0]:,}번 (평가 횟수는 계산기마다 몇 % 다르다)")
+assert 5.5e4 <= tot < 6.5e4 and 1.5e3 <= adapt_cost[6][1] < 2.5e3 and tot > 20 * adapt_cost[6][1], "5절 (B): HVA n = 6 의 p = 1~9 에 평가 약 6만 번, ADAPT 는 약 2천 번"
 assert first_below(adapt_curves[6], 1e-8) == (31, 62) and hva_pts[6][-1][0] == 18 and hva_pts[6][-1][2] == 90, "5절 (B)·1절: n = 6 에서 ADAPT 는 게이트 31·CNOT 62, HVA 는 파라미터 18·CNOT 90"
 tB = time.time() - T0 - tA
 
@@ -831,7 +842,9 @@ for p_ in (6, 8):
     print(f"    (b) HVA n = 6, p = {p_}: 무작위 시작점 250개 중 최선 오차 {Eb-E06:.2e} (B3 의 21개 중 최선 {old:.2e}, {old/max(Eb-E06,1e-16):.0f}배)  ({time.time()-t5:.0f} s)", flush=True)
 old6 = dict((pp // 2, e) for pp, e, _ in hva_pts[6])
 assert _sig(hva_more[6], 3.21e-4, 3) and f"{old6[6] / hva_more[6]:.0f}" == "7", "5절 (B): 시작점 250개면 n = 6, p = 6 은 2.3×10⁻³ → 3.2×10⁻⁴ (7배)"
-assert _sig(hva_more[8], 4.98e-6, 3) and f"{old6[8] / hva_more[8]:.0f}" == "12", "5절 (B): 시작점 250개면 n = 6, p = 8 은 5.9×10⁻⁵ → 5.0×10⁻⁶ (12배)"
+# p = 8 의 250개 중 최선은 계산기마다 크게 갈린다(2026-11-13: 맥 7.5×10⁻⁶, 리눅스 arm64 1.3×10⁻⁷, 리눅스 x86_64 4.8×10⁻⁶, 기준 환경 5.0×10⁻⁶).
+# 본문은 "10⁻⁵ 아래로, 21개일 때보다 몇 배 이상"만 말하므로 그것만 대조한다.
+assert hva_more[8] < 1e-5 and old6[8] / hva_more[8] >= 5, "5절 (B): 시작점 250개면 n = 6, p = 8 은 10⁻⁵ 아래로(21개 중 최선의 5배 이상) 내려간다"
 tF = time.time() - tF
 
 # ---------- 그림 ----------

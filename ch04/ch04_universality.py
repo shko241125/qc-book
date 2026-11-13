@@ -54,21 +54,28 @@ print("   길이≤L | 단어 수(길이 L) | 최소 거리(1-|Tr|/2) | 최소 �
 best_word_overall = None
 ang_by_L = {}                               # 회귀 검사용 기록
 cum = (np.inf, None, None)
+# 동점 처리: 거리가 1e-12 안에서 같은 단어(예: 전역 위상만 다른 곱)는 반올림 끝자리에 따라 순서가 뒤바뀐다
+# (2026-11-13 확인: 같은 numpy 2.5.4 에서도 CPU 에 따라 최선 단어가 달라졌다). 더 짧고, 같은 길이면 사전순(H < T)으로 먼저 나온 것을 남긴다.
+TIE = 1e-12
+ties_by_L = {}                              # 길이 L 에서 최소 거리와 1e-12 안에서 같은 단어 수
 for L in range(1, 15):
-    best = (np.inf, None)
+    best = (np.inf, None); dl = []
     for word in product('HT', repeat=L):
         # HH = I 인 단어는 건너뛰어 탐색을 줄인다
         if any(word[i] == word[i+1] == 'H' for i in range(L-1)): continue
         M = I.copy()
         for g in word: M = M @ gates[g]
-        d = dist(M, target)
-        if d < best[0]: best = (d, ''.join(word), M)
-    if best[0] < cum[0]: cum = best
+        d = dist(M, target); dl.append(d)
+        if d < best[0] - TIE: best = (d, ''.join(word), M)
+    ties_by_L[L] = int(np.sum(np.array(dl) <= best[0] + TIE))
+    if best[0] < cum[0] - TIE: cum = best
     ang = su2_angle(cum[2], target)
     print(f"   {L:4d} | {2**L:7d} | {cum[0]:.6f} | {ang:.4f}")
     best_word_overall = cum
     ang_by_L[L] = ang
-print("   최선의 단어:", best_word_overall[1])
+L_best = len(best_word_overall[1])
+print("   최선의 단어:", best_word_overall[1],
+      f"(길이 {L_best} 에서 같은 거리(1e-12 안)를 내는 단어 {ties_by_L[L_best]}개 중 사전순 첫째 — 동점은 반올림에 따라 순서가 바뀌므로 규칙으로 고른다)")
 for L_md, ang_md in [(1, 1.2028), (3, 0.7309), (4, 0.5302), (8, 0.5302), (9, 0.2309), (12, 0.2306), (14, 0.2306)]:
     assert abs(ang_by_L[L_md] - ang_md) < 5e-5, "5절 {H,T} 전수 탐색 표: 최소 회전각 오차"
 assert abs(ang_by_L[14] - 0.23) < 5e-3, "1절 요약: 길이 14 에서 오차 0.23 rad"
